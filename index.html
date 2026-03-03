@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>⚾ Baseball Run Pool</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,sans-serif;background:#0f172a;color:#f1f5f9;min-height:100vh}
+  button{cursor:pointer;border:none;border-radius:8px;font-weight:700;transition:opacity .15s}
+  button:hover{opacity:.85}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  input,select{background:#0f172a;color:#f1f5f9;border:1px solid #334155;border-radius:8px;padding:9px 12px;font-size:14px;width:100%}
+  input:focus,select:focus{outline:2px solid #2563eb}
+  .card{background:#1e293b;border-radius:12px;padding:20px}
+  .tab-btn{padding:8px 16px;border-radius:8px;font-weight:700;font-size:14px;background:#1e293b;color:#f1f5f9}
+  .tab-btn.active{background:#2563eb}
+  .flash{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:12px 28px;border-radius:10px;font-weight:700;z-index:999;box-shadow:0 4px 20px #0008}
+  table{width:100%;border-collapse:collapse}
+  th{background:#0f172a;padding:11px 14px;text-align:left;font-size:13px;color:#94a3b8;font-weight:700}
+  td{padding:12px 14px;border-top:1px solid #0f172a;font-size:14px}
+  tr:nth-child(even) td{background:#1a2744}
+  .spinner{display:inline-block;width:18px;height:18px;border:3px solid #334155;border-top-color:#38bdf8;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  #app{max-width:1020px;margin:0 auto;padding:16px}
+  nav{background:#1e293b;border-bottom:2px solid #2563eb;padding:12px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:0}
+  .nav-title{font-weight:800;font-size:20px;color:#38bdf8;margin-right:6px}
+  .nav-btn{padding:8px 14px;border-radius:6px;background:#1e293b;color:#f1f5f9;font-size:13px;font-weight:700;border:1px solid #334155}
+  .nav-btn.active{background:#2563eb;border-color:#2563eb}
+  .logout-btn{margin-left:auto;background:#dc2626;color:#fff;padding:8px 14px;border-radius:6px;font-size:13px}
+  .team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));gap:8px}
+  .team-btn{padding:9px 12px;border-radius:8px;text-align:left;font-size:13px;font-weight:600;background:#0f172a;color:#f1f5f9;border-left:3px solid #2563eb}
+  .team-btn.taken{background:#1e1e2e;color:#475569;border-left-color:#ef4444}
+  .team-btn.used{background:#1e1e2e;color:#475569;border-left-color:#7c3aed}
+  .team-btn:disabled{cursor:not-allowed}
+</style>
+</head>
+<body>
+<nav id="nav"></nav>
+<div id="flash-area"></div>
+<div id="app"><div style="text-align:center;padding:60px;color:#94a3b8"><span class="spinner"></span> Loading...</div></div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyCY2yCDv1BjiMGwitmZwarjlx4wLSyXNYQ",
+  authDomain: "baseball-runs-pool.firebaseapp.com",
+  projectId: "baseball-runs-pool",
+  storageBucket: "baseball-runs-pool.firebasestorage.app",
+  messagingSenderId: "78861263916",
+  appId: "1:78861263916:web:73a7fc2ba45676813b9d89"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+const POOL_DOC = doc(db, "pool", "main");
+const ADMIN_PW = "commissioner";
+
+const MLB_TEAMS = [
+  "Arizona Diamondbacks","Atlanta Braves","Baltimore Orioles","Boston Red Sox",
+  "Chicago Cubs","Chicago White Sox","Cincinnati Reds","Cleveland Guardians",
+  "Colorado Rockies","Detroit Tigers","Houston Astros","Kansas City Royals",
+  "Los Angeles Angels","Los Angeles Dodgers","Miami Marlins","Milwaukee Brewers",
+  "Minnesota Twins","New York Mets","New York Yankees","Oakland Athletics",
+  "Philadelphia Phillies","Pittsburgh Pirates","San Diego Padres","San Francisco Giants",
+  "Seattle Mariners","St. Louis Cardinals","Tampa Bay Rays","Texas Rangers",
+  "Toronto Blue Jays","Washington Nationals"
+];
+
+let state = { data: null, user: null, view: "home" };
+
+function defaultData() {
+  return { seasonStart:"", weekCount:26, players:[], weeks:{} };
+}
+
+async function saveData(d) {
+  state.data = d;
+  await setDoc(POOL_DOC, d);
+}
+
+function flash(msg, color="#16a34a") {
+  const el = document.getElementById("flash-area");
+  el.innerHTML = `<div class="flash" style="background:${color}">${msg}</div>`;
+  setTimeout(() => el.innerHTML = "", 3000);
+}
+
+function currentWeek() {
+  const d = state.data;
+  if (!d?.seasonStart) return 1;
+  const start = new Date(d.seasonStart);
+  const now = new Date();
+  const diff = Math.floor((now - start) / (7*24*3600*1000));
+  return Math.max(1, Math.min(diff+1, d.weekCount||26));
+}
+
+function orderedPlayers(w) {
+  return [...(state.data.players||[])].sort((a,b) =>
+    (a.draftOrder?.[w]??99) - (b.draftOrder?.[w]??99)
+  );
+}
+
+function usedTeams(playerName) {
+  const used = new Set();
+  Object.values(state.data.weeks||{}).forEach(w => {
+    if (w.picks?.[playerName]) used.add(w.picks[playerName]);
+  });
+  return used;
+}
+
+function takenTeams(w) {
+  return new Set(Object.values(state.data.weeks?.[w]?.picks||{}));
+}
+
+function isMyTurn(w, playerName) {
+  const picks = state.data.weeks?.[w]?.picks||{};
+  const next = orderedPlayers(w).find(p => !picks[p.name]);
+  return next?.name === playerName;
+}
+
+function calcWeekStandings(w) {
+  const picks = state.data.weeks?.[w]?.picks||{};
+  const runs  = state.data.weeks?.[w]?.runs||{};
+  const rows = (state.data.players||[]).map(p => ({
+    name: p.name,
+    team: picks[p.name]||null,
+    runs: picks[p.name]!=null ? (runs[picks[p.name]]??null) : null,
+    payout: 0
+  }));
+  rows.sort((a,b)=>(b.runs??-1)-(a.runs??-1));
+  const withRuns = rows.filter(r=>r.runs!==null);
+  if (withRuns.length>0) {
+    const winner = withRuns[0];
+    winner.payout = withRuns.slice(1).reduce((s,r)=>s+(winner.runs-r.runs),0)*2;
+  }
+  return rows;
+}
+
+function calcSeasonStandings() {
+  const totals = {};
+  (state.data.players||[]).forEach(p=>{ totals[p.name]={name:p.name,totalRuns:0,totalWinnings:0,weeks:0}; });
+  for (let w=1;w<=(state.data.weekCount||26);w++) {
+    const ws = calcWeekStandings(w);
+    if (!ws.some(r=>r.runs!==null)) continue;
+    ws.forEach(r=>{
+      if (!totals[r.name]) return;
+      if (r.runs!==null){totals[r.name].totalRuns+=r.runs;totals[r.name].weeks++;}
+      totals[r.name].totalWinnings+=r.payout||0;
+    });
+  }
+  return Object.values(totals).sort((a,b)=>b.totalWinnings-a.totalWinnings||b.totalRuns-a.totalRuns);
+}
+
+// ── Nav ────────────────────────────────────────────────────
+function renderNav() {
+  const {user, view} = state;
+  const nb = (v,label) => `<button class="nav-btn${view===v?' active':''}" onclick="setView('${v}')">${label}</button>`;
+  document.getElementById("nav").innerHTML = `
+    <span class="nav-title">⚾ Run Pool</span>
+    ${nb("home","Home")}
+    ${nb("draft","Draft Board")}
+    ${nb("standings","Standings")}
+    ${user?.isAdmin ? nb("admin","Admin") : ""}
+    ${user&&!user.isAdmin ? nb("player","My Picks") : ""}
+    ${user ? `<button class="logout-btn" onclick="logout()">Logout (${user.name})</button>` : ""}
+  `;
+}
+
+window.setView = v => { state.view=v; render(); };
+window.logout  = () => { state.user=null; state.view="home"; render(); };
+
+function render() {
+  renderNav();
+  const app = document.getElementById("app");
+  if (!state.data) { app.innerHTML=`<div style="padding:60px;text-align:center;color:#94a3b8"><span class="spinner"></span> Loading data...</div>`; return; }
+  switch(state.view) {
+    case "home":      app.innerHTML = renderHome(); break;
+    case "admin":     app.innerHTML = renderAdmin(); break;
+    case "player":    app.innerHTML = renderPlayer(); break;
+    case "standings": app.innerHTML = renderStandings(); break;
+    case "draft":     app.innerHTML = renderDraft(); break;
+  }
+}
+
+// ── HOME ───────────────────────────────────────────────────
+function renderHome() {
+  const w = currentWeek();
+  const seasonInfo = state.data.seasonStart
+    ? `<p style="color:#94a3b8;margin-top:6px">Season started: ${state.data.seasonStart} &nbsp;|&nbsp; Current Week: <strong style="color:#38bdf8">${w}</strong></p>`
+    : `<p style="color:#f59e0b;margin-top:6px">Season not configured. Admin must set up the pool first.</p>`;
+  const playerOpts = (state.data.players||[]).map(p=>`<option value="${p.name}">${p.name}</option>`).join("");
+  return `
+  <div style="text-align:center;margin-bottom:28px;padding-top:20px">
+    <div style="font-size:32px;font-weight:800;color:#38bdf8">⚾ Baseball Run Pool</div>
+    ${seasonInfo}
+  </div>
+  <div style="max-width:400px;margin:0 auto" class="card">
+    <div style="display:flex;gap:8px;margin-bottom:20px">
+      <button class="tab-btn active" id="tab-player" onclick="homeTab('player')" style="flex:1">Player Login</button>
+      <button class="tab-btn" id="tab-admin" onclick="homeTab('admin')" style="flex:1">Admin Login</button>
+    </div>
+    <div id="home-player-panel">
+      ${!playerOpts ? `<p style="color:#94a3b8;text-align:center">No players set up yet.</p>` : `
+      <select id="player-select" style="margin-bottom:12px"><option value="">Select your name...</option>${playerOpts}</select>
+      <button style="width:100%;padding:11px;background:#2563eb;color:#fff;font-size:16px" onclick="loginPlayer()">Enter Pool</button>`}
+    </div>
+    <div id="home-admin-panel" style="display:none">
+      <input type="password" id="admin-pw" placeholder="Commissioner password" style="margin-bottom:8px" onkeydown="if(event.key==='Enter')loginAdmin()"/>
+      <div id="pw-error" style="color:#ef4444;font-size:13px;margin-bottom:8px"></div>
+      <button style="width:100%;padding:11px;background:#7c3aed;color:#fff;font-size:16px" onclick="loginAdmin()">Login as Admin</button>
+    </div>
+  </div>`;
+}
+
+window.homeTab = t => {
+  document.getElementById("home-player-panel").style.display = t==="player"?"block":"none";
+  document.getElementById("home-admin-panel").style.display  = t==="admin"?"block":"none";
+  document.getElementById("tab-player").classList.toggle("active", t==="player");
+  document.getElementById("tab-admin").classList.toggle("active", t==="admin");
+};
+window.loginPlayer = () => {
+  const name = document.getElementById("player-select")?.value;
+  if (!name) return;
+  state.user = {name, isAdmin:false};
+  state.view = "player";
+  render();
+};
+window.loginAdmin = () => {
+  const pw = document.getElementById("admin-pw")?.value;
+  if (pw===ADMIN_PW) { state.user={name:"Commissioner",isAdmin:true}; state.view="admin"; render(); }
+  else document.getElementById("pw-error").textContent="Incorrect password.";
+};
+
+// ── ADMIN ──────────────────────────────────────────────────
+function renderAdmin() {
+  return `
+  <h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin-bottom:16px">Commissioner Panel</h2>
+  <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
+    ${["setup","players","runs","manage"].map((t,i)=>`<button class="tab-btn${i===0?' active':''}" id="atab-${t}" onclick="adminTab('${t}')">${{setup:"Season Setup",players:"Players & Draft Order",runs:"Enter Runs",manage:"Week Management"}[t]}</button>`).join("")}
+  </div>
+  <div id="admin-panel">${renderAdminSetup()}</div>`;
+}
+
+window.adminTab = t => {
+  ["setup","players","runs","manage"].forEach(x => document.getElementById(`atab-${x}`)?.classList.toggle("active",x===t));
+  const panel = document.getElementById("admin-panel");
+  if (t==="setup")   panel.innerHTML = renderAdminSetup();
+  if (t==="players") panel.innerHTML = renderAdminPlayers();
+  if (t==="runs")    panel.innerHTML = renderAdminRuns(currentWeek());
+  if (t==="manage")  panel.innerHTML = renderAdminManage(currentWeek());
+};
+
+function renderAdminSetup() {
+  return `<div class="card" style="max-width:400px">
+    <h3 style="font-weight:700;margin-bottom:16px">Season Settings</h3>
+    <label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Season Start Date</label>
+    <input type="date" id="season-start" value="${state.data.seasonStart||''}" style="margin-bottom:14px"/>
+    <label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Number of Weeks</label>
+    <input type="number" id="week-count" value="${state.data.weekCount||26}" min="1" max="30" style="margin-bottom:16px"/>
+    <button style="padding:10px 24px;background:#2563eb;color:#fff" onclick="saveSetup()">Save Settings</button>
+  </div>`;
+}
+window.saveSetup = async () => {
+  const start = document.getElementById("season-start").value;
+  const wc    = Number(document.getElementById("week-count").value);
+  await saveData({...state.data, seasonStart:start, weekCount:wc});
+  flash("Season settings saved!");
+};
+
+function renderAdminPlayers() {
+  const players = state.data.players?.length ? state.data.players : Array(8).fill(null).map(()=>({name:"",draftOrder:{}}));
+  return `<div style="display:flex;gap:20px;flex-wrap:wrap">
+    <div class="card" style="flex:1 1 260px">
+      <h3 style="font-weight:700;margin-bottom:14px">Player Names</h3>
+      ${players.map((p,i)=>`<input id="pname-${i}" value="${p.name}" placeholder="Player ${i+1}" style="margin-bottom:10px"/>`).join("")}
+      <button style="padding:10px 24px;background:#2563eb;color:#fff;margin-top:4px" onclick="savePlayers()">Save Players</button>
+    </div>
+    <div class="card" style="flex:1 1 260px">
+      <h3 style="font-weight:700;margin-bottom:12px">Draft Order by Week</h3>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+        <label style="color:#94a3b8;font-size:13px">Week:</label>
+        <input type="number" id="order-week" value="1" min="1" max="${state.data.weekCount||26}" style="width:60px"/>
+        <button style="padding:6px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadOrderEditor()">Edit</button>
+      </div>
+      <div id="order-editor"></div>
+    </div>
+  </div>`;
+}
+
+window.savePlayers = async () => {
+  const existing = state.data.players?.length ? state.data.players : Array(8).fill(null).map(()=>({name:"",draftOrder:{}}));
+  const updated = existing.map((p,i)=>({...p,name:(document.getElementById(`pname-${i}`)?.value||"").trim()})).filter(p=>p.name);
+  if (updated.length<2){flash("Need at least 2 players.","#dc2626");return;}
+  await saveData({...state.data, players:updated});
+  flash("Players saved!");
+};
+
+window.loadOrderEditor = () => renderOrderEditor(Number(document.getElementById("order-week").value));
+
+let _orderState = [];
+function renderOrderEditor(w) {
+  const players = state.data.players||[];
+  if (!players.length){document.getElementById("order-editor").innerHTML=`<p style="color:#94a3b8">Save players first.</p>`;return;}
+  _orderState = [...players].sort((a,b)=>(a.draftOrder?.[w]??99)-(b.draftOrder?.[w]??99));
+  document.getElementById("order-editor").innerHTML = `
+    <div style="color:#38bdf8;font-weight:700;margin-bottom:10px">Week ${w} Pick Order</div>
+    ${_orderState.map((p,i)=>`
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;background:#0f172a;border-radius:8px;padding:8px 12px">
+        <span style="color:#38bdf8;width:24px;font-weight:800">#${i+1}</span>
+        <span style="flex:1;font-weight:600">${p.name}</span>
+        <button style="padding:2px 9px;background:#334155;color:#f1f5f9;border-radius:4px;font-size:13px" onclick="orderMove(${w},${i},-1)">↑</button>
+        <button style="padding:2px 9px;background:#334155;color:#f1f5f9;border-radius:4px;font-size:13px" onclick="orderMove(${w},${i},1)">↓</button>
+      </div>`).join("")}
+    <button style="margin-top:8px;padding:8px 18px;background:#16a34a;color:#fff" onclick="saveOrder(${w})">Save Order</button>`;
+}
+
+window.orderMove = (w, idx, dir) => {
+  const ni = idx+dir;
+  if (ni<0||ni>=_orderState.length) return;
+  [_orderState[idx],_orderState[ni]]=[_orderState[ni],_orderState[idx]];
+  _orderState.forEach((p,i)=>{ p.draftOrder={...(p.draftOrder||{}),[w]:i}; });
+  renderOrderEditor(w);
+};
+
+window.saveOrder = async w => {
+  const players = state.data.players.map(p=>{
+    const u=_orderState.find(x=>x.name===p.name);
+    return u?{...p,draftOrder:{...(p.draftOrder||{}),...(u.draftOrder||{})}}:p;
+  });
+  await saveData({...state.data, players});
+  flash(`Week ${w} order saved!`);
+};
+
+function renderAdminRuns(w) {
+  const picks = state.data.weeks?.[w]?.picks||{};
+  const runs  = state.data.weeks?.[w]?.runs||{};
+  const entries = Object.entries(picks);
+  return `<div class="card" style="max-width:520px">
+    <h3 style="font-weight:700;margin-bottom:14px">Enter / Override Runs</h3>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:18px;flex-wrap:wrap">
+      <label style="color:#94a3b8;font-size:13px">Week:</label>
+      <input type="number" id="runs-week" value="${w}" min="1" max="${state.data.weekCount||26}" style="width:60px"/>
+      <button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="changeRunsWeek()">Load</button>
+      <button id="fetch-btn" style="padding:7px 14px;background:#0891b2;color:#fff;font-size:13px" onclick="fetchLiveRuns()">⚡ Fetch Live</button>
+    </div>
+    <div id="runs-rows">
+      ${entries.length===0 ? `<p style="color:#94a3b8">No picks for this week yet.</p>` :
+        entries.map(([player,team])=>`
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;background:#0f172a;border-radius:8px;padding:10px 14px">
+            <div style="flex:1"><div style="font-weight:600">${player}</div><div style="color:#94a3b8;font-size:13px">${team}</div></div>
+            <input type="number" id="run-${team.replace(/ /g,'_')}" value="${runs[team]??''}" min="0" placeholder="Runs" style="width:75px;text-align:center"/>
+          </div>`).join("")}
+    </div>
+    ${entries.length>0?`<button style="margin-top:8px;padding:10px 24px;background:#2563eb;color:#fff" onclick="saveRuns(${w})">Save Runs</button>`:""}
+  </div>`;
+}
+
+window.changeRunsWeek = () => {
+  const w = Number(document.getElementById("runs-week").value);
+  document.getElementById("admin-panel").innerHTML = renderAdminRuns(w);
+};
+
+window.saveRuns = async w => {
+  const picks = state.data.weeks?.[w]?.picks||{};
+  const runs = {};
+  Object.values(picks).forEach(team=>{
+    const el=document.getElementById(`run-${team.replace(/ /g,'_')}`);
+    if (el&&el.value!=="") runs[team]=Number(el.value);
+  });
+  const weeks={...state.data.weeks,[w]:{...state.data.weeks?.[w],runs}};
+  await saveData({...state.data,weeks});
+  flash(`Runs saved for Week ${w}!`);
+};
+
+window.fetchLiveRuns = async () => {
+  const w = Number(document.getElementById("runs-week").value);
+  const picks = state.data.weeks?.[w]?.picks||{};
+  const teams = Object.values(picks);
+  if (!teams.length){flash("No picks for this week.","#b45309");return;}
+  if (!state.data.seasonStart){flash("Set season start date first.","#b45309");return;}
+  const btn=document.getElementById("fetch-btn");
+  btn.innerHTML=`<span class="spinner"></span>Fetching...`; btn.disabled=true;
+  try {
+    const start=new Date(state.data.seasonStart);
+    const ws=new Date(start); ws.setDate(start.getDate()+(w-1)*7);
+    const we=new Date(ws); we.setDate(ws.getDate()+6);
+    const fmt=d=>d.toISOString().split("T")[0];
+    const url=`https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=${fmt(ws)}&endDate=${fmt(we)}&gameType=R&fields=dates,date,games,gamePk,teams,away,home,team,name,score,status,abstractGameState`;
+    const res=await fetch(url); const json=await res.json();
+    const totals={};
+    for (const de of json.dates||[]) for (const g of de.games||[]) {
+      if (g.status?.abstractGameState!=="Final") continue;
+      const aw=g.teams?.away,hm=g.teams?.home;
+      if (aw?.team?.name) totals[aw.team.name]=(totals[aw.team.name]||0)+(aw.score||0);
+      if (hm?.team?.name) totals[hm.team.name]=(totals[hm.team.name]||0)+(hm.score||0);
+    }
+    let found=0;
+    teams.forEach(team=>{
+      const el=document.getElementById(`run-${team.replace(/ /g,'_')}`);
+      if (el&&totals[team]!==undefined){el.value=totals[team];found++;}
+    });
+    flash(found?`Fetched runs for ${found}/${teams.length} teams!`:"No final game data found yet.","#0891b2");
+  } catch { flash("MLB API fetch failed — enter manually.","#dc2626"); }
+  btn.innerHTML="⚡ Fetch Live"; btn.disabled=false;
+};
+
+function renderAdminManage(w) {
+  const locked=state.data.weeks?.[w]?.locked||false;
+  return `<div class="card" style="max-width:400px">
+    <h3 style="font-weight:700;margin-bottom:14px">Week Management</h3>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:18px">
+      <label style="color:#94a3b8;font-size:13px">Week:</label>
+      <input type="number" id="manage-week" value="${w}" min="1" max="${state.data.weekCount||26}" style="width:60px"/>
+      <button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadManage()">Load</button>
+    </div>
+    <div style="background:#0f172a;border-radius:8px;padding:12px 16px;margin-bottom:16px">
+      <div style="color:#94a3b8;font-size:13px;margin-bottom:4px">Status — Week ${w}</div>
+      <div style="font-weight:700;color:${locked?"#ef4444":"#16a34a"}">${locked?"🔒 Locked":"🟢 Open for picks"}</div>
+    </div>
+    <div style="display:flex;gap:10px">
+      <button style="padding:10px 18px;background:${locked?"#16a34a":"#ef4444"};color:#fff" onclick="toggleLock(${w},${locked})">${locked?"Unlock Week":"Lock Week"}</button>
+      <button style="padding:10px 18px;background:#b45309;color:#fff" onclick="clearPicks(${w})">Clear Picks</button>
+    </div>
+  </div>`;
+}
+window.loadManage  = () => { document.getElementById("admin-panel").innerHTML=renderAdminManage(Number(document.getElementById("manage-week").value)); };
+window.toggleLock  = async (w,locked) => { const weeks={...state.data.weeks,[w]:{...state.data.weeks?.[w],locked:!locked}}; await saveData({...state.data,weeks}); flash(`Week ${w} ${!locked?"locked":"unlocked"}!`); document.getElementById("admin-panel").innerHTML=renderAdminManage(w); };
+window.clearPicks  = async w => { if (!confirm(`Clear all picks for Week ${w}?`)) return; const weeks={...state.data.weeks,[w]:{...state.data.weeks?.[w],picks:{}}}; await saveData({...state.data,weeks}); flash(`Week ${w} picks cleared.`); };
+
+// ── PLAYER ─────────────────────────────────────────────────
+function renderPlayer() {
+  const name=state.user.name, w=currentWeek();
+  const myPick=state.data.weeks?.[w]?.picks?.[name];
+  const myRuns=myPick!=null?(state.data.weeks?.[w]?.runs?.[myPick]??null):null;
+  const used=usedTeams(name), taken=takenTeams(w);
+  const p=state.data.players?.find(x=>x.name===name);
+  const pos=p?.draftOrder?.[w]!=null?p.draftOrder[w]+1:null;
+  const myTurn=isMyTurn(w,name);
+  const locked=state.data.weeks?.[w]?.locked||false;
+
+  const statusBox=myPick
+    ?`<div style="margin-top:10px;padding:12px 16px;background:#16a34a22;border-radius:8px;border:1px solid #16a34a">✅ Picked: <strong>${myPick}</strong>${myRuns!==null?` &nbsp;<span style="color:#fbbf24">🏃 ${myRuns} runs</span>`:""}</div>`
+    :locked?`<div style="margin-top:10px;padding:10px 16px;background:#ef444422;border:1px solid #ef4444;border-radius:8px;color:#ef4444;font-weight:600">🔒 Week is locked by commissioner.</div>`
+    :myTurn?`<div style="margin-top:10px;padding:10px 16px;background:#2563eb22;border:1px solid #2563eb;border-radius:8px;color:#38bdf8;font-weight:600">🎯 It's your turn to pick!</div>`
+    :`<div style="margin-top:10px;color:#94a3b8;font-size:14px">Waiting for your turn in the draft order...</div>`;
+
+  const histRows=Array.from({length:state.data.weekCount||26},(_,i)=>i+1).map(wk=>{
+    const pick=state.data.weeks?.[wk]?.picks?.[name];
+    const r=pick?state.data.weeks?.[wk]?.runs?.[pick]:null;
+    return pick?`<tr><td style="color:#94a3b8">Wk ${wk}</td><td style="font-weight:600">${pick}</td><td style="color:#fbbf24;text-align:right">${r!=null?r+" runs":"—"}</td></tr>`:"";
+  }).join("");
+
+  return `
+  <div style="display:flex;gap:8px;margin-bottom:20px">
+    <button class="tab-btn active" id="ptab-pick" onclick="playerTab('pick')">Make Pick</button>
+    <button class="tab-btn" id="ptab-history" onclick="playerTab('history')">My History</button>
+  </div>
+  <div id="player-panel">
+    <div class="card">
+      <div style="font-weight:800;font-size:18px;margin-bottom:4px">Week ${w} — ${name}</div>
+      ${pos?`<div style="color:#94a3b8;font-size:14px">Draft position this week: <strong style="color:#38bdf8">#${pos}</strong></div>`:""}
+      ${statusBox}
+    </div>
+    ${(!myPick&&!locked)?`<div class="card" style="margin-top:16px">
+      <h3 style="font-weight:700;margin-bottom:14px">Select Your Team — Week ${w}</h3>
+      <div class="team-grid">
+        ${MLB_TEAMS.map(team=>{
+          const isTaken=taken.has(team),isUsed=used.has(team),dis=isTaken||isUsed;
+          return `<button class="team-btn${isTaken?' taken':isUsed?' used':''}" ${dis?"disabled":""} onclick="makePick('${team.replace(/'/g,"\\'")}',${w})">
+            ${team}${isTaken?` <span style="font-size:11px;color:#ef4444">taken</span>`:isUsed?` <span style="font-size:11px;color:#9333ea">used</span>`:""}
+          </button>`;
+        }).join("")}
+      </div>
+    </div>`:""}
+  </div>
+  <div id="player-history" style="display:none">
+    <div class="card">
+      <h3 style="font-weight:700;margin-bottom:14px">My Season History</h3>
+      ${histRows?`<table><thead><tr><th>Week</th><th>Team</th><th style="text-align:right">Runs</th></tr></thead><tbody>${histRows}</tbody></table>`:`<p style="color:#94a3b8">No picks recorded yet.</p>`}
+    </div>
+  </div>`;
+}
+
+window.playerTab = t => {
+  document.getElementById("player-panel").style.display=t==="pick"?"block":"none";
+  document.getElementById("player-history").style.display=t==="history"?"block":"none";
+  document.getElementById("ptab-pick").classList.toggle("active",t==="pick");
+  document.getElementById("ptab-history").classList.toggle("active",t==="history");
+};
+
+window.makePick = async (team,w) => {
+  const name=state.user.name, wd=state.data.weeks?.[w]||{};
+  if (wd.locked){flash("Week is locked — contact commissioner.","#dc2626");return;}
+  if (takenTeams(w).has(team)){flash("That team is already taken this week!","#dc2626");return;}
+  if (usedTeams(name).has(team)){flash("You already used that team this season!","#dc2626");return;}
+  if (!isMyTurn(w,name)){flash("It's not your turn yet!","#dc2626");return;}
+  const picks={...wd.picks,[name]:team};
+  const weeks={...state.data.weeks,[w]:{...wd,picks}};
+  await saveData({...state.data,weeks});
+  flash(`✅ Picked ${team} for Week ${w}!`);
+};
+
+// ── DRAFT BOARD ────────────────────────────────────────────
+function renderDraft() {
+  const w=currentWeek();
+  return `
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+    <h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin:0">Draft Board</h2>
+    <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+      <label style="color:#94a3b8;font-size:13px">Week:</label>
+      <input type="number" id="draft-week" value="${w}" min="1" max="${state.data.weekCount||26}" style="width:60px"/>
+      <button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadDraft()">Load</button>
+    </div>
+  </div>
+  <div id="draft-table">${renderDraftTable(w)}</div>`;
+}
+function renderDraftTable(w) {
+  const ordered=orderedPlayers(w), picks=state.data.weeks?.[w]?.picks||{}, runs=state.data.weeks?.[w]?.runs||{};
+  if (!ordered.length) return `<p style="color:#94a3b8">No players configured yet.</p>`;
+  return `<div class="card" style="padding:0;overflow:hidden"><table>
+    <thead><tr><th>Pick #</th><th>Player</th><th>Team</th><th style="text-align:right">Runs</th></tr></thead>
+    <tbody>${ordered.map((p,i)=>{const team=picks[p.name],r=team?runs[team]:null;return`<tr>
+      <td style="color:#38bdf8;font-weight:800">#${i+1}</td>
+      <td style="font-weight:600">${p.name}</td>
+      <td style="color:${team?"#f1f5f9":"#475569"}">${team||"<em>Pending...</em>"}</td>
+      <td style="text-align:right;font-weight:700;color:#fbbf24">${r!=null?r:"—"}</td>
+    </tr>`;}).join("")}</tbody></table></div>`;
+}
+window.loadDraft=()=>{const w=Number(document.getElementById("draft-week").value);document.getElementById("draft-table").innerHTML=renderDraftTable(w);};
+
+// ── STANDINGS ──────────────────────────────────────────────
+function renderStandings() {
+  const w=currentWeek();
+  return `
+  <h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin-bottom:16px">Standings</h2>
+  <div style="display:flex;gap:8px;margin-bottom:20px">
+    <button class="tab-btn active" id="stab-week" onclick="standTab('week')">This Week</button>
+    <button class="tab-btn" id="stab-season" onclick="standTab('season')">Full Season</button>
+  </div>
+  <div id="stand-week">${renderWeekStandings(w)}</div>
+  <div id="stand-season" style="display:none">${renderSeasonStandings()}</div>`;
+}
+function renderWeekStandings(w) {
+  const rows=calcWeekStandings(w);
+  return `
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
+    <label style="color:#94a3b8;font-size:13px">Week:</label>
+    <input type="number" id="week-stand" value="${w}" min="1" max="${state.data.weekCount||26}" style="width:60px"/>
+    <button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="reloadWeekStand()">Load</button>
+  </div>
+  <div id="week-stand-table"><div class="card" style="padding:0;overflow:hidden"><table>
+    <thead><tr><th>Rank</th><th>Player</th><th>Team</th><th style="text-align:right">Runs</th><th style="text-align:right">Winnings</th></tr></thead>
+    <tbody>${rows.map((r,i)=>`<tr style="${i===0&&r.runs!==null?"background:#16a34a18":""}">
+      <td style="font-weight:800;color:${i===0?"#fbbf24":"#94a3b8"}">${i===0?"🏆":i+1}</td>
+      <td style="font-weight:600">${r.name}</td>
+      <td style="color:#94a3b8;font-size:13px">${r.team||"—"}</td>
+      <td style="text-align:right;font-weight:700;color:#38bdf8">${r.runs!=null?r.runs:"—"}</td>
+      <td style="text-align:right;font-weight:700;color:${r.payout>0?"#16a34a":"#475569"}">${r.payout!=null?"$"+r.payout.toFixed(2):"—"}</td>
+    </tr>`).join("")}</tbody></table></div></div>`;
+}
+function renderSeasonStandings() {
+  const rows=calcSeasonStandings();
+  return `<div class="card" style="padding:0;overflow:hidden"><table>
+    <thead><tr><th>Rank</th><th>Player</th><th style="text-align:right">Weeks</th><th style="text-align:right">Total Runs</th><th style="text-align:right">Total Won</th></tr></thead>
+    <tbody>${rows.map((r,i)=>`<tr style="${i===0?"background:#16a34a18":""}">
+      <td style="font-weight:800;color:${i===0?"#fbbf24":"#94a3b8"}">${i===0?"🏆":i+1}</td>
+      <td style="font-weight:600">${r.name}</td>
+      <td style="text-align:right;color:#94a3b8">${r.weeks}</td>
+      <td style="text-align:right;font-weight:700;color:#38bdf8">${r.totalRuns}</td>
+      <td style="text-align:right;font-weight:700;color:${r.totalWinnings>0?"#16a34a":"#475569"}">$${r.totalWinnings.toFixed(2)}</td>
+    </tr>`).join("")}</tbody></table></div>`;
+}
+window.standTab=t=>{
+  document.getElementById("stand-week").style.display=t==="week"?"block":"none";
+  document.getElementById("stand-season").style.display=t==="season"?"block":"none";
+  document.getElementById("stab-week").classList.toggle("active",t==="week");
+  document.getElementById("stab-season").classList.toggle("active",t==="season");
+};
+window.reloadWeekStand=()=>{ document.getElementById("stand-week").innerHTML=renderWeekStandings(Number(document.getElementById("week-stand").value)); };
+
+// ── Boot ───────────────────────────────────────────────────
+onSnapshot(POOL_DOC, snap => {
+  state.data = snap.exists() ? snap.data() : defaultData();
+  render();
+});
+</script>
+</body>
+</html>
