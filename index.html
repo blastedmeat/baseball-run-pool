@@ -776,6 +776,21 @@ window.standTab=t=>{
 };
 window.reloadWeekStand=()=>{ document.getElementById("stand-week").innerHTML=renderWeekStandings(Number(document.getElementById("week-stand").value)); };
 
+window.resetPool = async (fullReset) => {
+  const msg = fullReset
+    ? "FULL RESET: This will wipe ALL data including player names. This cannot be undone. Type RESET to confirm:"
+    : "SOFT RESET: This will clear all picks, runs, and season dates but keep player names. Type RESET to confirm:";
+  const answer = prompt(msg);
+  if (answer !== "RESET") { flash("Reset cancelled — you must type RESET exactly.", "#b45309"); return; }
+  const newData = fullReset
+    ? defaultData()
+    : { ...defaultData(), players: (state.data.players||[]).map(p => ({ name: p.name, draftOrder: {} })) };
+  _scheduleCache = {};
+  await saveData(newData);
+  flash(fullReset ? "Pool fully reset — blank slate!" : "Season data cleared — player names kept!", "#b45309");
+  document.getElementById("admin-panel").innerHTML = renderAdminReset();
+};
+
 // ── Boot ───────────────────────────────────────────────────
 onSnapshot(POOL_DOC, snap => {
   state.data = snap.exists() ? snap.data() : defaultData();
