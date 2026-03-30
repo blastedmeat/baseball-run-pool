@@ -258,7 +258,7 @@ function renderAdmin() {
   return `
   <h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin-bottom:16px">Commissioner Panel</h2>
   <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
-    ${["setup","players","runs","manage","picks","reset"].map((t,i)=>`<button class="tab-btn${i===0?' active':''}" id="atab-${t}" onclick="adminTab('${t}')">${{setup:"Season Setup",players:"Players & Draft Order",runs:"Enter Runs",manage:"Week Management",picks:"Enter Pick",reset:"⚠️ Reset Pool"}[t]}</button>`).join("")}
+    ${["setup","players","runs","manage","picks","reset"].map((t,i)=>`<button class="tab-btn${i===0?' active':''}" id="atab-${t}" onclick="adminTab('${t}')">${{setup:"Season Setup",players:"Players & Draft Order",runs:"Enter Runs",manage:"Week Management",picks:"Enter Pick",reset:"Reset Pool"}[t]}</button>`).join("")}
   </div>
   <div id="admin-panel">${renderAdminSetup()}</div>`;
 }
