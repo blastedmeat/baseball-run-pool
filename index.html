@@ -95,10 +95,31 @@ function currentWeek() {
   return Math.max(1, Math.min(diff+1, d.weekCount||26));
 }
 
-function orderedPlayers(w) {
-  return [...(state.data.players||[])].sort((a,b) =>
-    (a.draftOrder?.[w]??99) - (b.draftOrder?.[w]??99)
-  );
+// Rotation pattern for player who picks 1st in week 1
+// Pattern: [1,6,5,3,8,2,4,7] (1-indexed positions), repeats every 8 weeks
+const ROTATION = [0,5,4,2,7,1,3,6]; // 0-indexed
+
+function getDraftPosition(playerIndex, weekNum) {
+  // playerIndex is 0-based rank in initial order
+  // each player shifts the rotation by their index
+  const w = ((weekNum - 1) % 8);
+  return (ROTATION[w] + playerIndex) % 8;
+}
+
+function orderedPlayers(weekNum) {
+  const players = state.data.players || [];
+  // If admin has saved a manual override for this week, use it
+  const hasOverride = players.some(p => p.draftOrder?.[weekNum] !== undefined);
+  if (hasOverride) {
+    return [...players].sort((a,b) =>
+      (a.draftOrder?.[weekNum]??99) - (b.draftOrder?.[weekNum]??99)
+    );
+  }
+  // Otherwise use auto-rotation
+  return players
+    .map((p, i) => ({ p, pos: getDraftPosition(i, weekNum) }))
+    .sort((a, b) => a.pos - b.pos)
+    .map(x => x.p);
 }
 
 function usedTeams(playerName) {
@@ -179,7 +200,7 @@ function render() {
     case "admin":     app.innerHTML = renderAdmin(); break;
     case "player":    app.innerHTML = renderPlayer(); break;
     case "standings": app.innerHTML = renderStandings(); break;
-    case "draft":     app.innerHTML = renderDraft(); break;
+    case "draft":     app.innerHTML = renderDraft(); renderDraftTable(currentWeek()).then(html => { if(document.getElementById("draft-table")) document.getElementById("draft-table").innerHTML = html; }); break;
   }
 }
 
@@ -237,7 +258,7 @@ function renderAdmin() {
   return `
   <h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin-bottom:16px">Commissioner Panel</h2>
   <div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">
-    ${["setup","players","runs","manage"].map((t,i)=>`<button class="tab-btn${i===0?' active':''}" id="atab-${t}" onclick="adminTab('${t}')">${{setup:"Season Setup",players:"Players & Draft Order",runs:"Enter Runs",manage:"Week Management"}[t]}</button>`).join("")}
+    ${["setup","players","runs","manage","picks","reset"].map((t,i)=>`<button class="tab-btn${i===0?' active':''}" id="atab-${t}" onclick="adminTab('${t}')">${{setup:"Season Setup",players:"Players & Draft Order",runs:"Enter Runs",manage:"Week Management",picks:"Enter Pick",reset:"⚠️ Reset Pool"}[t]}</button>`).join("")}
   </div>
   <div id="admin-panel">${renderAdminSetup()}</div>`;
 }
@@ -249,6 +270,8 @@ window.adminTab = t => {
   if (t==="players") panel.innerHTML = renderAdminPlayers();
   if (t==="runs")    panel.innerHTML = renderAdminRuns(currentWeek());
   if (t==="manage")  panel.innerHTML = renderAdminManage(currentWeek());
+  if (t==="picks")   panel.innerHTML = renderAdminPicks(currentWeek());
+  if (t==="reset")   panel.innerHTML = renderAdminReset();
 };
 
 function renderAdminSetup() {
@@ -278,6 +301,7 @@ function renderAdminPlayers() {
     </div>
     <div class="card" style="flex:1 1 260px">
       <h3 style="font-weight:700;margin-bottom:12px">Draft Order by Week</h3>
+      <p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Auto-rotation is applied by default (1→6→5→3→8→2→4→7). Use the editor below to override a specific week.</p>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">
         <label style="color:#94a3b8;font-size:13px">Week:</label>
         <input type="number" id="order-week" value="1" min="1" max="${state.data.weekCount||26}" style="width:60px"/>
@@ -390,8 +414,12 @@ window.fetchLiveRuns = async () => {
     const res=await fetch(url); const json=await res.json();
     const totals={};
     for (const de of json.dates||[]) for (const g of de.games||[]) {
-      if (g.status?.abstractGameState!=="Final") continue;
-      const aw=g.teams?.away,hm=g.teams?.home;
+      const detail = g.status?.detailedState?.toLowerCase()||"";
+      const isFinal = g.status?.abstractGameState === "Final";
+      const isSuspended = detail.includes("suspended") || detail.includes("resume");
+      // Count runs for Final games AND suspended games (partial runs count)
+      if (!isFinal && !isSuspended) continue;
+      const aw=g.teams?.away, hm=g.teams?.home;
       if (aw?.team?.name) totals[aw.team.name]=(totals[aw.team.name]||0)+(aw.score||0);
       if (hm?.team?.name) totals[hm.team.name]=(totals[hm.team.name]||0)+(hm.score||0);
     }
@@ -428,14 +456,134 @@ window.loadManage  = () => { document.getElementById("admin-panel").innerHTML=re
 window.toggleLock  = async (w,locked) => { const weeks={...state.data.weeks,[w]:{...state.data.weeks?.[w],locked:!locked}}; await saveData({...state.data,weeks}); flash(`Week ${w} ${!locked?"locked":"unlocked"}!`); document.getElementById("admin-panel").innerHTML=renderAdminManage(w); };
 window.clearPicks  = async w => { if (!confirm(`Clear all picks for Week ${w}?`)) return; const weeks={...state.data.weeks,[w]:{...state.data.weeks?.[w],picks:{}}}; await saveData({...state.data,weeks}); flash(`Week ${w} picks cleared.`); };
 
+function renderAdminReset() {
+  return `<div class="card" style="max-width:480px;border:2px solid #ef4444">
+    <h3 style="font-weight:700;margin-bottom:8px;color:#ef4444">⚠️ Reset Pool</h3>
+    <p style="color:#94a3b8;font-size:14px;margin-bottom:20px;line-height:1.6">
+      Use this to wipe the pool data and start fresh. Choose whether to keep your player names/order or clear everything completely.
+    </p>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="background:#0f172a;border-radius:10px;padding:16px">
+        <div style="font-weight:700;margin-bottom:4px">Soft Reset</div>
+        <div style="color:#94a3b8;font-size:13px;margin-bottom:12px">Clears all weeks, picks, runs, and season dates — but <strong style="color:#f1f5f9">keeps player names</strong> so you don't have to re-enter them.</div>
+        <button style="padding:10px 20px;background:#b45309;color:#fff" onclick="resetPool(false)">Reset Season Data Only</button>
+      </div>
+      <div style="background:#0f172a;border-radius:10px;padding:16px">
+        <div style="font-weight:700;margin-bottom:4px">Full Reset</div>
+        <div style="color:#94a3b8;font-size:13px;margin-bottom:12px">Wipes <strong style="color:#ef4444">everything</strong> — all weeks, picks, runs, season dates, and player names. Back to a completely blank slate.</div>
+        <button style="padding:10px 20px;background:#ef4444;color:#fff" onclick="resetPool(true)">Full Reset — Wipe Everything</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+window.resetPool = async (fullReset) => {
+  const msg = fullReset
+    ? "FULL RESET: This will wipe ALL data including player names. This cannot be undone. Type RESET to confirm:"
+    : "SOFT RESET: This will clear all picks, runs, and season dates but keep player names. Type RESET to confirm:";
+  const confirm = prompt(msg);
+  if (confirm !== "RESET") { flash("Reset cancelled — you must type RESET exactly.", "#b45309"); return; }
+  const newData = fullReset
+    ? defaultData()
+    : { ...defaultData(), players: (state.data.players||[]).map(p => ({ name: p.name, draftOrder: {} })) };
+  _scheduleCache = {};
+  await saveData(newData);
+  flash(fullReset ? "Pool fully reset — blank slate!" : "Season data cleared — player names kept!", "#b45309");
+  document.getElementById("admin-panel").innerHTML = renderAdminReset();
+};
+  const players = state.data.players || [];
+  const picks = state.data.weeks?.[w]?.picks || {};
+  const taken = new Set(Object.values(picks));
+
+  const rows = players.map(p => {
+    const current = picks[p.name];
+    const used = usedTeams(p.name);
+    const teamOpts = MLB_TEAMS.map(t => {
+      const isTaken = taken.has(t) && t !== current;
+      const isUsed  = used.has(t) && t !== current;
+      const dis = isTaken || isUsed;
+      return `<option value="${t}" ${current===t?"selected":""} ${dis?"disabled":""}>
+        ${t}${isTaken?" (taken)":isUsed?" (used by this player)":""}
+      </option>`;
+    }).join("");
+    return `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;background:#0f172a;border-radius:8px;padding:10px 14px;flex-wrap:wrap">
+        <div style="min-width:120px;font-weight:600">${p.name}</div>
+        <select id="apick-${p.name.replace(/ /g,'_')}" style="flex:1;min-width:180px">
+          <option value="">— No pick —</option>
+          ${teamOpts}
+        </select>
+      </div>`;
+  }).join("");
+
+  return `<div class="card" style="max-width:580px">
+    <h3 style="font-weight:700;margin-bottom:14px">Enter Pick for Player</h3>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:18px">
+      <label style="color:#94a3b8;font-size:13px">Week:</label>
+      <input type="number" id="apick-week" value="${w}" min="1" max="${state.data.weekCount||26}" style="width:60px"/>
+      <button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadAdminPicks()">Load</button>
+    </div>
+    <div id="apick-rows">${rows}</div>
+    <div style="margin-top:16px;display:flex;gap:10px">
+      <button style="padding:10px 24px;background:#2563eb;color:#fff" onclick="saveAdminPicks(${w})">Save Picks</button>
+      <button style="padding:10px 24px;background:#b45309;color:#fff" onclick="clearAdminPick(${w})">Clear All Picks</button>
+    </div>
+  </div>`;
+}
+
+window.loadAdminPicks = () => {
+  const w = Number(document.getElementById("apick-week").value);
+  document.getElementById("admin-panel").innerHTML = renderAdminPicks(w);
+};
+
+window.saveAdminPicks = async w => {
+  const players = state.data.players || [];
+  const existingPicks = state.data.weeks?.[w]?.picks || {};
+  const newPicks = {...existingPicks};
+
+  // Check for conflicts before saving
+  const selections = {};
+  for (const p of players) {
+    const el = document.getElementById(`apick-${p.name.replace(/ /g,'_')}`);
+    if (el && el.value) selections[p.name] = el.value;
+  }
+
+  // Detect duplicate team selections across players
+  const teamCount = {};
+  Object.values(selections).forEach(t => { teamCount[t] = (teamCount[t]||0)+1; });
+  const dupes = Object.entries(teamCount).filter(([,c])=>c>1).map(([t])=>t);
+  if (dupes.length) { flash(`Conflict: ${dupes.join(", ")} selected by more than one player.`,"#dc2626"); return; }
+
+  // Apply selections (empty = clear that player's pick)
+  players.forEach(p => {
+    const el = document.getElementById(`apick-${p.name.replace(/ /g,'_')}`);
+    if (!el) return;
+    if (el.value) newPicks[p.name] = el.value;
+    else delete newPicks[p.name];
+  });
+
+  const weeks = {...state.data.weeks, [w]: {...state.data.weeks?.[w], picks: newPicks}};
+  await saveData({...state.data, weeks});
+  flash(`Picks saved for Week ${w}!`);
+  document.getElementById("admin-panel").innerHTML = renderAdminPicks(w);
+};
+
+window.clearAdminPick = async w => {
+  if (!confirm(`Clear ALL picks for Week ${w}?`)) return;
+  const weeks = {...state.data.weeks, [w]: {...state.data.weeks?.[w], picks: {}}};
+  await saveData({...state.data, weeks});
+  flash(`All picks cleared for Week ${w}.`);
+  document.getElementById("admin-panel").innerHTML = renderAdminPicks(w);
+};
+
 // ── PLAYER ─────────────────────────────────────────────────
 function renderPlayer() {
   const name=state.user.name, w=currentWeek();
   const myPick=state.data.weeks?.[w]?.picks?.[name];
   const myRuns=myPick!=null?(state.data.weeks?.[w]?.runs?.[myPick]??null):null;
   const used=usedTeams(name), taken=takenTeams(w);
-  const p=state.data.players?.find(x=>x.name===name);
-  const pos=p?.draftOrder?.[w]!=null?p.draftOrder[w]+1:null;
+  const playerIndex = state.data.players?.findIndex(x => x.name === name) ?? -1;
+  const pos = playerIndex >= 0 ? getDraftPosition(playerIndex, w) + 1 : null;
   const myTurn=isMyTurn(w,name);
   const locked=state.data.weeks?.[w]?.locked||false;
 
@@ -502,8 +650,42 @@ window.makePick = async (team,w) => {
 };
 
 // ── DRAFT BOARD ────────────────────────────────────────────
+let _scheduleCache = {}; // {weekNum: {teamName: gameCount}}
+
+async function fetchWeekSchedule(w) {
+  if (_scheduleCache[w]) return _scheduleCache[w];
+  if (!state.data.seasonStart) return {};
+  try {
+    const start = new Date(state.data.seasonStart);
+    const ws = new Date(start); ws.setDate(start.getDate()+(w-1)*7);
+    const we = new Date(ws); we.setDate(ws.getDate()+6);
+    const fmt = d => d.toISOString().split("T")[0];
+    const url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=${fmt(ws)}&endDate=${fmt(we)}&gameType=R&fields=dates,games,teams,away,home,team,name,status,abstractGameState,detailedState`;
+    const res = await fetch(url);
+    const json = await res.json();
+    const counts = {};
+    for (const de of json.dates||[]) {
+      for (const g of de.games||[]) {
+        const aw = g.teams?.away?.team?.name;
+        const hm = g.teams?.home?.team?.name;
+        const state = g.status?.abstractGameState;
+        const detail = g.status?.detailedState?.toLowerCase()||"";
+        const isSuspended = detail.includes("suspended") || detail.includes("resume");
+        const val = isSuspended ? 0.5 : 1;
+        if (aw) counts[aw] = (counts[aw]||0) + val;
+        if (hm) counts[hm] = (counts[hm]||0) + val;
+      }
+    }
+    // Format: show as integer if whole number, otherwise show .5
+    const formatted = {};
+    Object.entries(counts).forEach(([k,v]) => { formatted[k] = v % 1 === 0 ? v : v.toFixed(1); });
+    _scheduleCache[w] = formatted;
+    return formatted;
+  } catch { return {}; }
+}
+
 function renderDraft() {
-  const w=currentWeek();
+  const w = currentWeek();
   return `
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
     <h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin:0">Draft Board</h2>
@@ -513,21 +695,36 @@ function renderDraft() {
       <button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadDraft()">Load</button>
     </div>
   </div>
-  <div id="draft-table">${renderDraftTable(w)}</div>`;
+  <div id="draft-table"><div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div></div>`;
 }
-function renderDraftTable(w) {
-  const ordered=orderedPlayers(w), picks=state.data.weeks?.[w]?.picks||{}, runs=state.data.weeks?.[w]?.runs||{};
+
+async function renderDraftTable(w) {
+  const ordered = orderedPlayers(w);
+  const picks = state.data.weeks?.[w]?.picks||{};
+  const runs  = state.data.weeks?.[w]?.runs||{};
+  const games = await fetchWeekSchedule(w);
   if (!ordered.length) return `<p style="color:#94a3b8">No players configured yet.</p>`;
   return `<div class="card" style="padding:0;overflow:hidden"><table>
-    <thead><tr><th>Pick #</th><th>Player</th><th>Team</th><th style="text-align:right">Runs</th></tr></thead>
-    <tbody>${ordered.map((p,i)=>{const team=picks[p.name],r=team?runs[team]:null;return`<tr>
-      <td style="color:#38bdf8;font-weight:800">#${i+1}</td>
-      <td style="font-weight:600">${p.name}</td>
-      <td style="color:${team?"#f1f5f9":"#475569"}">${team||"<em>Pending...</em>"}</td>
-      <td style="text-align:right;font-weight:700;color:#fbbf24">${r!=null?r:"—"}</td>
-    </tr>`;}).join("")}</tbody></table></div>`;
+    <thead><tr><th>Pick #</th><th>Player</th><th>Team</th><th style="text-align:center">Games</th><th style="text-align:right">Runs</th></tr></thead>
+    <tbody>${ordered.map((p,i)=>{
+      const team = picks[p.name];
+      const r    = team ? runs[team] : null;
+      const g    = team ? (games[team]??'—') : '—';
+      return `<tr>
+        <td style="color:#38bdf8;font-weight:800">#${i+1}</td>
+        <td style="font-weight:600">${p.name}</td>
+        <td style="color:${team?"#f1f5f9":"#475569"}">${team||"<em>Pending...</em>"}</td>
+        <td style="text-align:center;color:#34d399;font-weight:700">${g}</td>
+        <td style="text-align:right;font-weight:700;color:#fbbf24">${r!=null?r:"—"}</td>
+      </tr>`;
+    }).join("")}</tbody></table></div>`;
 }
-window.loadDraft=()=>{const w=Number(document.getElementById("draft-week").value);document.getElementById("draft-table").innerHTML=renderDraftTable(w);};
+
+window.loadDraft = async () => {
+  const w = Number(document.getElementById("draft-week").value);
+  document.getElementById("draft-table").innerHTML = `<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div>`;
+  document.getElementById("draft-table").innerHTML = await renderDraftTable(w);
+};
 
 // ── STANDINGS ──────────────────────────────────────────────
 function renderStandings() {
