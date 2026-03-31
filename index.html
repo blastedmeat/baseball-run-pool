@@ -155,6 +155,9 @@ function calcWeekStandings(weekNum) {
   if (withRuns.length > 0) {
     const winner = withRuns[0];
     winner.payout = withRuns.slice(1).reduce(function(s,r) { return s + (winner.runs - r.runs); }, 0) * 2;
+    withRuns.slice(1).forEach(function(r) {
+      r.payout = (r.runs - winner.runs) * 2; // negative number = owes money
+    });
   }
   return rows;
 }
@@ -834,7 +837,7 @@ function renderWeekStandings(w, liveRuns) {
       '<td style="font-weight:600">' + r.name + '</td>' +
       '<td style="color:#94a3b8;font-size:13px">' + (r.team||"--") + '</td>' +
       '<td style="text-align:right;font-weight:700;color:#38bdf8">' + (r.runs!=null?r.runs:"--") + '</td>' +
-      '<td style="text-align:right;font-weight:700;color:' + (r.payout>0?"#16a34a":"#475569") + '">' + (r.payout!=null?"$"+r.payout.toFixed(2):"--") + '</td></tr>';
+      '<td style="text-align:right;font-weight:700;color:' + (r.payout>0?"#16a34a":r.payout<0?"#ef4444":"#475569") + '">' + (r.payout!=null?(r.payout>=0?"$"+r.payout.toFixed(2):"-$"+Math.abs(r.payout).toFixed(2)):"--") + '</td></tr>';
   }).join("");
   return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
