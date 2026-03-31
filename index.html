@@ -44,7 +44,7 @@ nav{background:#1e293b;border-bottom:2px solid #2563eb;padding:12px 20px;display
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-const firebaseConfig = {
+var firebaseConfig = {
   apiKey: "AIzaSyCY2yCDv1BjiMGwitmZwarjlx4wLSyXNYQ",
   authDomain: "baseball-runs-pool.firebaseapp.com",
   projectId: "baseball-runs-pool",
@@ -53,12 +53,11 @@ const firebaseConfig = {
   appId: "1:78861263916:web:73a7fc2ba45676813b9d89"
 };
 
-const fbApp = initializeApp(firebaseConfig);
-const db = getFirestore(fbApp);
-const POOL_DOC = doc(db, "pool", "main");
-const ADMIN_PW = "commissioner";
-
-const MLB_TEAMS = [
+var fbApp = initializeApp(firebaseConfig);
+var db = getFirestore(fbApp);
+var POOL_DOC = doc(db, "pool", "main");
+var ADMIN_PW = "commissioner";
+var MLB_TEAMS = [
   "Arizona Diamondbacks","Atlanta Braves","Baltimore Orioles","Boston Red Sox",
   "Chicago Cubs","Chicago White Sox","Cincinnati Reds","Cleveland Guardians",
   "Colorado Rockies","Detroit Tigers","Houston Astros","Kansas City Royals",
@@ -68,227 +67,244 @@ const MLB_TEAMS = [
   "Seattle Mariners","St. Louis Cardinals","Tampa Bay Rays","Texas Rangers",
   "Toronto Blue Jays","Washington Nationals"
 ];
-
-const ROTATION = [0,5,4,2,7,1,3,6];
-
-let state = { data: null, user: null, view: "home" };
-let _scheduleCache = {};
-let _orderState = [];
+var ROTATION = [0,5,4,2,7,1,3,6];
+var appState = { data: null, user: null, view: "home" };
+var scheduleCache = {};
+var liveRunsCache = {};
+var orderState = [];
 
 function defaultData() {
   return { seasonStart:"", weekCount:26, players:[], weeks:{} };
 }
 
 async function saveData(d) {
-  state.data = d;
+  appState.data = d;
   await setDoc(POOL_DOC, d);
 }
 
 function flash(msg, color) {
-  color = color || "#16a34a";
-  const el = document.getElementById("flash-area");
-  el.innerHTML = '<div class="flash" style="background:' + color + '">' + msg + '</div>';
-  setTimeout(function() { el.innerHTML = ""; }, 3000);
+  if (!color) color = "#16a34a";
+  document.getElementById("flash-area").innerHTML = '<div class="flash" style="background:' + color + '">' + msg + '</div>';
+  setTimeout(function() { document.getElementById("flash-area").innerHTML = ""; }, 3000);
 }
 
 function currentWeek() {
-  const d = state.data;
-  if (!d || !d.seasonStart) return 1;
-  const start = new Date(d.seasonStart);
-  const now = new Date();
-  const diff = Math.floor((now - start) / (7*24*3600*1000));
-  return Math.max(1, Math.min(diff+1, d.weekCount||26));
+  if (!appState.data || !appState.data.seasonStart) return 1;
+  var start = new Date(appState.data.seasonStart);
+  var now = new Date();
+  var diff = Math.floor((now - start) / (7*24*3600*1000));
+  return Math.max(1, Math.min(diff+1, appState.data.weekCount||26));
 }
 
 function getDraftPosition(playerIndex, weekNum) {
-  const w = (weekNum - 1) % 8;
+  var w = (weekNum - 1) % 8;
   return (ROTATION[w] + playerIndex) % 8;
 }
 
 function orderedPlayers(weekNum) {
-  const players = state.data.players || [];
-  const hasOverride = players.some(function(p) { return p.draftOrder && p.draftOrder[weekNum] !== undefined; });
+  var players = appState.data.players || [];
+  var hasOverride = false;
+  for (var i = 0; i < players.length; i++) {
+    if (players[i].draftOrder && players[i].draftOrder[weekNum] !== undefined) { hasOverride = true; break; }
+  }
+  var sorted = players.slice();
   if (hasOverride) {
-    return players.slice().sort(function(a,b) {
-      return ((a.draftOrder && a.draftOrder[weekNum]) || 99) - ((b.draftOrder && b.draftOrder[weekNum]) || 99);
+    sorted.sort(function(a,b) {
+      var as = (a.draftOrder && a.draftOrder[weekNum] !== undefined) ? a.draftOrder[weekNum] : 99;
+      var bs = (b.draftOrder && b.draftOrder[weekNum] !== undefined) ? b.draftOrder[weekNum] : 99;
+      return as - bs;
+    });
+  } else {
+    sorted.sort(function(a,b) {
+      return getDraftPosition(players.indexOf(a), weekNum) - getDraftPosition(players.indexOf(b), weekNum);
     });
   }
-  return players.map(function(p, i) {
-    return { p: p, pos: getDraftPosition(i, weekNum) };
-  }).sort(function(a,b) { return a.pos - b.pos; }).map(function(x) { return x.p; });
+  return sorted;
 }
 
 function usedTeams(playerName) {
-  const used = new Set();
-  const weeks = state.data.weeks || {};
-  Object.values(weeks).forEach(function(w) {
-    if (w.picks && w.picks[playerName]) used.add(w.picks[playerName]);
-  });
+  var used = [];
+  var weeks = appState.data.weeks || {};
+  for (var w in weeks) {
+    if (weeks[w].picks && weeks[w].picks[playerName]) used.push(weeks[w].picks[playerName]);
+  }
   return used;
 }
 
-function takenTeams(weekNum) {
-  const picks = (state.data.weeks && state.data.weeks[weekNum] && state.data.weeks[weekNum].picks) || {};
-  return new Set(Object.values(picks));
+function takenTeamsThisWeek(weekNum) {
+  var taken = [];
+  var picks = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].picks) || {};
+  for (var p in picks) taken.push(picks[p]);
+  return taken;
 }
 
 function isMyTurn(weekNum, playerName) {
-  const picks = (state.data.weeks && state.data.weeks[weekNum] && state.data.weeks[weekNum].picks) || {};
-  const ordered = orderedPlayers(weekNum);
-  const next = ordered.find(function(p) { return !picks[p.name]; });
-  return next && next.name === playerName;
+  var picks = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].picks) || {};
+  var ordered = orderedPlayers(weekNum);
+  for (var i = 0; i < ordered.length; i++) {
+    if (!picks[ordered[i].name]) return ordered[i].name === playerName;
+  }
+  return false;
 }
 
-function calcWeekStandings(weekNum) {
-  const picks = (state.data.weeks && state.data.weeks[weekNum] && state.data.weeks[weekNum].picks) || {};
-  const runs  = (state.data.weeks && state.data.weeks[weekNum] && state.data.weeks[weekNum].runs)  || {};
-  const rows = (state.data.players || []).map(function(p) {
-    return {
-      name: p.name,
-      team: picks[p.name] || null,
-      runs: picks[p.name] != null ? (runs[picks[p.name]] != null ? runs[picks[p.name]] : null) : null,
-      payout: 0
-    };
-  });
-  rows.sort(function(a,b) { return (b.runs != null ? b.runs : -1) - (a.runs != null ? a.runs : -1); });
-  const withRuns = rows.filter(function(r) { return r.runs !== null; });
-  if (withRuns.length > 0) {
-    const winner = withRuns[0];
-    winner.payout = withRuns.slice(1).reduce(function(s,r) { return s + (winner.runs - r.runs); }, 0) * 2;
-    withRuns.slice(1).forEach(function(r) {
-      r.payout = (r.runs - winner.runs) * 2; // negative number = owes money
-    });
+// ── PAYOUT CALCULATION ──────────────────────────────────────
+function calcWeekStandings(weekNum, overrideRuns) {
+  var picks = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].picks) || {};
+  var savedRuns = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].runs) || {};
+  var runs = overrideRuns || savedRuns;
+  var players = appState.data.players || [];
+
+  // Build rows — players with picks get 0 runs if no data yet, players without picks get null
+  var rows = [];
+  for (var i = 0; i < players.length; i++) {
+    var p = players[i];
+    var team = picks[p.name] || null;
+    var playerRuns = null;
+    if (team !== null) {
+      playerRuns = (runs[team] !== undefined && runs[team] !== null) ? runs[team] : 0;
+    }
+    rows.push({ name: p.name, team: team, runs: playerRuns, payout: null });
   }
+
+  // Sort descending by runs, null last
+  rows.sort(function(a, b) {
+    var ar = (a.runs !== null) ? a.runs : -9999;
+    var br = (b.runs !== null) ? b.runs : -9999;
+    return br - ar;
+  });
+
+  // Find players who have picks (runs !== null)
+  var playersWithPicks = [];
+  for (var j = 0; j < rows.length; j++) {
+    if (rows[j].runs !== null) playersWithPicks.push(rows[j]);
+  }
+
+  // Calculate payouts
+  if (playersWithPicks.length > 0) {
+    var winner = playersWithPicks[0];
+    var winnerPayout = 0;
+    for (var k = 1; k < playersWithPicks.length; k++) {
+      var diff = winner.runs - playersWithPicks[k].runs;
+      winnerPayout += diff * 2;
+      playersWithPicks[k].payout = -(diff * 2);
+    }
+    winner.payout = winnerPayout;
+  }
+
   return rows;
 }
 
 function calcSeasonStandings() {
-  const totals = {};
-  (state.data.players || []).forEach(function(p) {
-    totals[p.name] = { name: p.name, totalRuns: 0, totalWinnings: 0, weeks: 0 };
-  });
-  for (let w = 1; w <= (state.data.weekCount || 26); w++) {
-    const ws = calcWeekStandings(w);
-    if (!ws.some(function(r) { return r.runs !== null; })) continue;
-    ws.forEach(function(r) {
-      if (!totals[r.name]) return;
-      if (r.runs !== null) { totals[r.name].totalRuns += r.runs; totals[r.name].weeks++; }
-      totals[r.name].totalWinnings += r.payout || 0;
-    });
+  var totals = {};
+  var players = appState.data.players || [];
+  for (var i = 0; i < players.length; i++) {
+    totals[players[i].name] = { name: players[i].name, totalRuns: 0, totalWinnings: 0, weeks: 0 };
   }
-  return Object.values(totals).sort(function(a,b) {
-    return b.totalWinnings - a.totalWinnings || b.totalRuns - a.totalRuns;
-  });
+  for (var w = 1; w <= (appState.data.weekCount || 26); w++) {
+    var ws = calcWeekStandings(w);
+    var hasData = false;
+    for (var j = 0; j < ws.length; j++) { if (ws[j].runs !== null) { hasData = true; break; } }
+    if (!hasData) continue;
+    for (var k = 0; k < ws.length; k++) {
+      var r = ws[k];
+      if (!totals[r.name]) continue;
+      if (r.runs !== null) { totals[r.name].totalRuns += r.runs; totals[r.name].weeks++; }
+      if (r.payout !== null) totals[r.name].totalWinnings += r.payout;
+    }
+  }
+  var result = [];
+  for (var name in totals) result.push(totals[name]);
+  result.sort(function(a,b) { return b.totalWinnings - a.totalWinnings || b.totalRuns - a.totalRuns; });
+  return result;
 }
 
-// Nav
+// ── NAV ─────────────────────────────────────────────────────
 function renderNav() {
-  const user = state.user;
-  const view = state.view;
+  var user = appState.user, view = appState.view;
   function nb(v, label) {
     return '<button class="nav-btn' + (view===v?' active':'') + '" onclick="setView(\'' + v + '\')">' + label + '</button>';
   }
   document.getElementById("nav").innerHTML =
     '<span class="nav-title">Baseball Run Pool</span>' +
-    nb("home","Home") +
-    nb("draft","Draft Board") +
-    nb("standings","Standings") +
+    nb("home","Home") + nb("draft","Draft Board") + nb("standings","Standings") +
     (user && user.isAdmin ? nb("admin","Admin") : "") +
     (user && !user.isAdmin ? nb("player","My Picks") : "") +
-    (user ? '<button class="logout-btn" onclick="logout()">Logout (' + user.name + ')</button>' : "");
+    (user ? '<button class="logout-btn" onclick="doLogout()">Logout (' + user.name + ')</button>' : "");
 }
 
-window.setView = function(v) { state.view = v; render(); };
-window.logout  = function() { state.user = null; state.view = "home"; render(); };
+window.setView = function(v) { appState.view = v; render(); };
+window.doLogout = function() { appState.user = null; appState.view = "home"; render(); };
 
 function render() {
   renderNav();
-  const app = document.getElementById("app");
-  if (!state.data) {
-    app.innerHTML = '<div style="padding:60px;text-align:center;color:#94a3b8"><span class="spinner"></span> Loading data...</div>';
-    return;
-  }
-  if (state.view === "home")      { app.innerHTML = renderHome(); }
-  if (state.view === "admin")     { app.innerHTML = renderAdmin(); }
-  if (state.view === "player")    { app.innerHTML = renderPlayer(); }
-  if (state.view === "standings") {
-    app.innerHTML = renderStandings();
-    loadStandingsWeek(currentWeek());
-  }
-  if (state.view === "draft") {
-    app.innerHTML = renderDraftShell();
-    renderDraftTable(currentWeek()).then(function(html) {
-      const el = document.getElementById("draft-table");
-      if (el) el.innerHTML = html;
-    });
-  }
+  var app = document.getElementById("app");
+  if (!appState.data) { app.innerHTML = '<div style="padding:60px;text-align:center;color:#94a3b8"><span class="spinner"></span> Loading...</div>'; return; }
+  if (appState.view === "home")      app.innerHTML = renderHome();
+  if (appState.view === "admin")     app.innerHTML = renderAdmin();
+  if (appState.view === "player")    app.innerHTML = renderPlayer();
+  if (appState.view === "standings") { app.innerHTML = renderStandingsShell(); loadStandingsWeek(currentWeek()); }
+  if (appState.view === "draft")     { app.innerHTML = renderDraftShell(); loadDraftTable(currentWeek()); }
 }
 
-// Home
+// ── HOME ─────────────────────────────────────────────────────
 function renderHome() {
-  const w = currentWeek();
-  const seasonInfo = state.data.seasonStart
-    ? '<p style="color:#94a3b8;margin-top:6px">Season started: ' + state.data.seasonStart + ' | Current Week: <strong style="color:#38bdf8">' + w + '</strong></p>'
+  var w = currentWeek();
+  var info = appState.data.seasonStart
+    ? '<p style="color:#94a3b8;margin-top:6px">Season started: ' + appState.data.seasonStart + ' | Current Week: <strong style="color:#38bdf8">' + w + '</strong></p>'
     : '<p style="color:#f59e0b;margin-top:6px">Season not configured. Admin must set up the pool first.</p>';
-  const playerOpts = (state.data.players || []).map(function(p) {
-    return '<option value="' + p.name + '">' + p.name + '</option>';
-  }).join("");
+  var opts = "";
+  var players = appState.data.players || [];
+  for (var i = 0; i < players.length; i++) opts += '<option value="' + players[i].name + '">' + players[i].name + '</option>';
   return '<div style="text-align:center;margin-bottom:28px;padding-top:20px">' +
-    '<div style="font-size:32px;font-weight:800;color:#38bdf8">Baseball Run Pool</div>' +
-    seasonInfo + '</div>' +
+    '<div style="font-size:32px;font-weight:800;color:#38bdf8">Baseball Run Pool</div>' + info + '</div>' +
     '<div style="max-width:400px;margin:0 auto" class="card">' +
     '<div style="display:flex;gap:8px;margin-bottom:20px">' +
     '<button class="tab-btn active" id="tab-player" onclick="homeTab(\'player\')" style="flex:1">Player Login</button>' +
     '<button class="tab-btn" id="tab-admin" onclick="homeTab(\'admin\')" style="flex:1">Admin Login</button></div>' +
     '<div id="home-player-panel">' +
-    (!playerOpts ? '<p style="color:#94a3b8;text-align:center">No players set up yet.</p>' :
-      '<select id="player-select" style="margin-bottom:12px"><option value="">Select your name...</option>' + playerOpts + '</select>' +
-      '<button style="width:100%;padding:11px;background:#2563eb;color:#fff;font-size:16px" onclick="loginPlayer()">Enter Pool</button>') +
-    '</div>' +
+    (!opts ? '<p style="color:#94a3b8;text-align:center">No players set up yet.</p>' :
+      '<select id="player-select" style="margin-bottom:12px"><option value="">Select your name...</option>' + opts + '</select>' +
+      '<button style="width:100%;padding:11px;background:#2563eb;color:#fff;font-size:16px" onclick="loginPlayer()">Enter Pool</button>') + '</div>' +
     '<div id="home-admin-panel" style="display:none">' +
     '<input type="password" id="admin-pw" placeholder="Commissioner password" style="margin-bottom:8px" onkeydown="if(event.key===\'Enter\')loginAdmin()"/>' +
     '<div id="pw-error" style="color:#ef4444;font-size:13px;margin-bottom:8px"></div>' +
-    '<button style="width:100%;padding:11px;background:#7c3aed;color:#fff;font-size:16px" onclick="loginAdmin()">Login as Admin</button>' +
-    '</div></div>';
+    '<button style="width:100%;padding:11px;background:#7c3aed;color:#fff;font-size:16px" onclick="loginAdmin()">Login as Admin</button></div></div>';
 }
-
 window.homeTab = function(t) {
-  document.getElementById("home-player-panel").style.display = t==="player" ? "block" : "none";
-  document.getElementById("home-admin-panel").style.display  = t==="admin"  ? "block" : "none";
-  document.getElementById("tab-player").classList.toggle("active", t==="player");
-  document.getElementById("tab-admin").classList.toggle("active", t==="admin");
+  document.getElementById("home-player-panel").style.display = t==="player"?"block":"none";
+  document.getElementById("home-admin-panel").style.display  = t==="admin"?"block":"none";
+  document.getElementById("tab-player").classList.toggle("active",t==="player");
+  document.getElementById("tab-admin").classList.toggle("active",t==="admin");
 };
 window.loginPlayer = function() {
-  const name = document.getElementById("player-select") && document.getElementById("player-select").value;
-  if (!name) return;
-  state.user = { name: name, isAdmin: false };
-  state.view = "player";
-  render();
+  var el = document.getElementById("player-select"); if (!el || !el.value) return;
+  appState.user = { name: el.value, isAdmin: false }; appState.view = "player"; render();
 };
 window.loginAdmin = function() {
-  const pw = document.getElementById("admin-pw") && document.getElementById("admin-pw").value;
-  if (pw === ADMIN_PW) { state.user = { name: "Commissioner", isAdmin: true }; state.view = "admin"; render(); }
+  var el = document.getElementById("admin-pw");
+  if (el && el.value === ADMIN_PW) { appState.user = { name:"Commissioner", isAdmin:true }; appState.view="admin"; render(); }
   else document.getElementById("pw-error").textContent = "Incorrect password.";
 };
 
-// Admin
+// ── ADMIN ─────────────────────────────────────────────────────
 function renderAdmin() {
-  const tabs = ["setup","players","runs","manage","picks","reset"];
-  const labels = { setup:"Season Setup", players:"Players & Draft Order", runs:"Enter Runs", manage:"Week Management", picks:"Enter Pick", reset:"Reset Pool" };
-  const tabBtns = tabs.map(function(t, i) {
-    return '<button class="tab-btn' + (i===0?' active':'') + '" id="atab-' + t + '" onclick="adminTab(\'' + t + '\')">' + labels[t] + '</button>';
-  }).join("");
+  var tabLabels = { setup:"Season Setup", players:"Players & Draft Order", runs:"Enter Runs", manage:"Week Management", picks:"Enter Pick", reset:"Reset Pool" };
+  var tabKeys = ["setup","players","runs","manage","picks","reset"];
+  var btns = "";
+  for (var i = 0; i < tabKeys.length; i++) {
+    btns += '<button class="tab-btn' + (i===0?' active':'') + '" id="atab-' + tabKeys[i] + '" onclick="adminTab(\'' + tabKeys[i] + '\')">' + tabLabels[tabKeys[i]] + '</button>';
+  }
   return '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin-bottom:16px">Commissioner Panel</h2>' +
-    '<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">' + tabBtns + '</div>' +
+    '<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">' + btns + '</div>' +
     '<div id="admin-panel">' + renderAdminSetup() + '</div>';
 }
-
 window.adminTab = function(t) {
-  ["setup","players","runs","manage","picks","reset"].forEach(function(x) {
-    const el = document.getElementById("atab-" + x);
-    if (el) el.classList.toggle("active", x===t);
-  });
-  const panel = document.getElementById("admin-panel");
+  var keys = ["setup","players","runs","manage","picks","reset"];
+  for (var i = 0; i < keys.length; i++) {
+    var el = document.getElementById("atab-" + keys[i]);
+    if (el) el.classList.toggle("active", keys[i]===t);
+  }
+  var panel = document.getElementById("admin-panel");
   if (t==="setup")   panel.innerHTML = renderAdminSetup();
   if (t==="players") panel.innerHTML = renderAdminPlayers();
   if (t==="runs")    panel.innerHTML = renderAdminRuns(currentWeek());
@@ -301,190 +317,210 @@ function renderAdminSetup() {
   return '<div class="card" style="max-width:400px">' +
     '<h3 style="font-weight:700;margin-bottom:16px">Season Settings</h3>' +
     '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Season Start Date</label>' +
-    '<input type="date" id="season-start" value="' + (state.data.seasonStart||'') + '" style="margin-bottom:14px"/>' +
+    '<input type="date" id="season-start" value="' + (appState.data.seasonStart||'') + '" style="margin-bottom:14px"/>' +
     '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Number of Weeks</label>' +
-    '<input type="number" id="week-count" value="' + (state.data.weekCount||26) + '" min="1" max="30" style="margin-bottom:16px"/>' +
+    '<input type="number" id="week-count" value="' + (appState.data.weekCount||26) + '" min="1" max="30" style="margin-bottom:16px"/>' +
     '<button style="padding:10px 24px;background:#2563eb;color:#fff" onclick="saveSetup()">Save Settings</button></div>';
 }
 window.saveSetup = async function() {
-  const start = document.getElementById("season-start").value;
-  const wc    = Number(document.getElementById("week-count").value);
-  await saveData(Object.assign({}, state.data, { seasonStart: start, weekCount: wc }));
-  flash("Season settings saved!");
+  var start = document.getElementById("season-start").value;
+  var wc = Number(document.getElementById("week-count").value);
+  var d = JSON.parse(JSON.stringify(appState.data));
+  d.seasonStart = start; d.weekCount = wc;
+  await saveData(d); flash("Season settings saved!");
 };
 
 function renderAdminPlayers() {
-  const players = state.data.players && state.data.players.length
-    ? state.data.players
-    : Array(8).fill(null).map(function() { return { name:"", draftOrder:{} }; });
-  const inputs = players.map(function(p,i) {
-    return '<input id="pname-' + i + '" value="' + p.name + '" placeholder="Player ' + (i+1) + '" style="margin-bottom:10px"/>';
-  }).join("");
+  var players = (appState.data.players && appState.data.players.length) ? appState.data.players : [];
+  while (players.length < 8) players.push({ name:"", draftOrder:{} });
+  var inputs = "";
+  for (var i = 0; i < players.length; i++) {
+    inputs += '<input id="pname-' + i + '" value="' + (players[i].name||"") + '" placeholder="Player ' + (i+1) + '" style="margin-bottom:10px"/>';
+  }
   return '<div style="display:flex;gap:20px;flex-wrap:wrap">' +
-    '<div class="card" style="flex:1 1 260px">' +
-    '<h3 style="font-weight:700;margin-bottom:14px">Player Names</h3>' +
-    inputs +
+    '<div class="card" style="flex:1 1 260px"><h3 style="font-weight:700;margin-bottom:14px">Player Names</h3>' + inputs +
     '<button style="padding:10px 24px;background:#2563eb;color:#fff;margin-top:4px" onclick="savePlayers()">Save Players</button></div>' +
-    '<div class="card" style="flex:1 1 260px">' +
-    '<h3 style="font-weight:700;margin-bottom:12px">Draft Order by Week</h3>' +
-    '<p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Auto-rotation is applied by default (1-6-5-3-8-2-4-7). Use the editor below to override a specific week.</p>' +
+    '<div class="card" style="flex:1 1 260px"><h3 style="font-weight:700;margin-bottom:12px">Draft Order by Week</h3>' +
+    '<p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Auto-rotation default: 1-6-5-3-8-2-4-7. Override a specific week below.</p>' +
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="order-week" value="1" min="1" max="' + (state.data.weekCount||26) + '" style="width:60px"/>' +
+    '<input type="number" id="order-week" value="1" min="1" max="' + (appState.data.weekCount||26) + '" style="width:60px"/>' +
     '<button style="padding:6px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadOrderEditor()">Edit</button></div>' +
     '<div id="order-editor"></div></div></div>';
 }
-
 window.savePlayers = async function() {
-  const existing = state.data.players && state.data.players.length
-    ? state.data.players
-    : Array(8).fill(null).map(function() { return { name:"", draftOrder:{} }; });
-  const updated = existing.map(function(p,i) {
-    const el = document.getElementById("pname-" + i);
-    return Object.assign({}, p, { name: el ? el.value.trim() : "" });
-  }).filter(function(p) { return p.name; });
-  if (updated.length < 2) { flash("Need at least 2 players.", "#dc2626"); return; }
-  await saveData(Object.assign({}, state.data, { players: updated }));
-  flash("Players saved!");
-};
-
-window.loadOrderEditor = function() {
-  renderOrderEditor(Number(document.getElementById("order-week").value));
-};
-
-function renderOrderEditor(weekNum) {
-  const players = state.data.players || [];
-  if (!players.length) {
-    document.getElementById("order-editor").innerHTML = '<p style="color:#94a3b8">Save players first.</p>';
-    return;
+  var existing = (appState.data.players && appState.data.players.length) ? appState.data.players : [];
+  while (existing.length < 8) existing.push({ name:"", draftOrder:{} });
+  var updated = [];
+  for (var i = 0; i < existing.length; i++) {
+    var el = document.getElementById("pname-" + i);
+    var name = el ? el.value.trim() : "";
+    if (name) updated.push({ name: name, draftOrder: existing[i].draftOrder || {} });
   }
-  _orderState = players.slice().sort(function(a,b) {
-    return ((a.draftOrder && a.draftOrder[weekNum]) || 99) - ((b.draftOrder && b.draftOrder[weekNum]) || 99);
+  if (updated.length < 2) { flash("Need at least 2 players.", "#dc2626"); return; }
+  var d = JSON.parse(JSON.stringify(appState.data)); d.players = updated;
+  await saveData(d); flash("Players saved!");
+};
+window.loadOrderEditor = function() { renderOrderEditor(Number(document.getElementById("order-week").value)); };
+function renderOrderEditor(weekNum) {
+  var players = appState.data.players || [];
+  if (!players.length) { document.getElementById("order-editor").innerHTML = '<p style="color:#94a3b8">Save players first.</p>'; return; }
+  orderState = players.slice().sort(function(a,b) {
+    var as = (a.draftOrder && a.draftOrder[weekNum] !== undefined) ? a.draftOrder[weekNum] : 99;
+    var bs = (b.draftOrder && b.draftOrder[weekNum] !== undefined) ? b.draftOrder[weekNum] : 99;
+    return as - bs;
   });
-  const rows = _orderState.map(function(p,i) {
-    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;background:#0f172a;border-radius:8px;padding:8px 12px">' +
+  var rows = "";
+  for (var i = 0; i < orderState.length; i++) {
+    rows += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;background:#0f172a;border-radius:8px;padding:8px 12px">' +
       '<span style="color:#38bdf8;width:24px;font-weight:800">#' + (i+1) + '</span>' +
-      '<span style="flex:1;font-weight:600">' + p.name + '</span>' +
-      '<button style="padding:2px 9px;background:#334155;color:#f1f5f9;border-radius:4px;font-size:13px" onclick="orderMove(' + weekNum + ',' + i + ',-1)">Up</button>' +
-      '<button style="padding:2px 9px;background:#334155;color:#f1f5f9;border-radius:4px;font-size:13px" onclick="orderMove(' + weekNum + ',' + i + ',1)">Dn</button></div>';
-  }).join("");
+      '<span style="flex:1;font-weight:600">' + orderState[i].name + '</span>' +
+      '<button style="padding:2px 9px;background:#334155;color:#f1f5f9;border-radius:4px" onclick="orderMove(' + weekNum + ',' + i + ',-1)">Up</button>' +
+      '<button style="padding:2px 9px;background:#334155;color:#f1f5f9;border-radius:4px" onclick="orderMove(' + weekNum + ',' + i + ',1)">Dn</button></div>';
+  }
   document.getElementById("order-editor").innerHTML =
-    '<div style="color:#38bdf8;font-weight:700;margin-bottom:10px">Week ' + weekNum + ' Pick Order</div>' +
-    rows +
+    '<div style="color:#38bdf8;font-weight:700;margin-bottom:10px">Week ' + weekNum + ' Pick Order</div>' + rows +
     '<button style="margin-top:8px;padding:8px 18px;background:#16a34a;color:#fff" onclick="saveOrder(' + weekNum + ')">Save Order</button>';
 }
-
 window.orderMove = function(weekNum, idx, dir) {
-  const ni = idx + dir;
-  if (ni < 0 || ni >= _orderState.length) return;
-  const tmp = _orderState[idx]; _orderState[idx] = _orderState[ni]; _orderState[ni] = tmp;
-  _orderState.forEach(function(p,i) {
-    p.draftOrder = Object.assign({}, p.draftOrder || {});
-    p.draftOrder[weekNum] = i;
-  });
+  var ni = idx + dir;
+  if (ni < 0 || ni >= orderState.length) return;
+  var tmp = orderState[idx]; orderState[idx] = orderState[ni]; orderState[ni] = tmp;
+  for (var i = 0; i < orderState.length; i++) { orderState[i].draftOrder = orderState[i].draftOrder || {}; orderState[i].draftOrder[weekNum] = i; }
   renderOrderEditor(weekNum);
 };
-
 window.saveOrder = async function(weekNum) {
-  const players = state.data.players.map(function(p) {
-    const u = _orderState.find(function(x) { return x.name === p.name; });
-    return u ? Object.assign({}, p, { draftOrder: Object.assign({}, p.draftOrder || {}, u.draftOrder || {}) }) : p;
-  });
-  await saveData(Object.assign({}, state.data, { players: players }));
-  flash("Week " + weekNum + " order saved!");
+  var d = JSON.parse(JSON.stringify(appState.data));
+  for (var i = 0; i < d.players.length; i++) {
+    var u = null;
+    for (var j = 0; j < orderState.length; j++) { if (orderState[j].name === d.players[i].name) { u = orderState[j]; break; } }
+    if (u) { d.players[i].draftOrder = d.players[i].draftOrder || {}; d.players[i].draftOrder[weekNum] = u.draftOrder[weekNum]; }
+  }
+  await saveData(d); flash("Week " + weekNum + " order saved!");
 };
 
 function renderAdminRuns(w) {
-  const picks = (state.data.weeks && state.data.weeks[w] && state.data.weeks[w].picks) || {};
-  const runs  = (state.data.weeks && state.data.weeks[w] && state.data.weeks[w].runs)  || {};
-  const entries = Object.entries(picks);
-  const rows = entries.length === 0
-    ? '<p style="color:#94a3b8">No picks for this week yet.</p>'
-    : entries.map(function(e) {
-        const player = e[0], team = e[1];
-        return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;background:#0f172a;border-radius:8px;padding:10px 14px">' +
-          '<div style="flex:1"><div style="font-weight:600">' + player + '</div><div style="color:#94a3b8;font-size:13px">' + team + '</div></div>' +
-          '<input type="number" id="run-' + team.replace(/ /g,'_') + '" value="' + (runs[team] != null ? runs[team] : '') + '" min="0" placeholder="Runs" style="width:75px;text-align:center"/></div>';
-      }).join("");
+  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
+  var runs  = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].runs)  || {};
+  var entries = Object.keys(picks);
+  var rows = "";
+  for (var i = 0; i < entries.length; i++) {
+    var player = entries[i], team = picks[player];
+    rows += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;background:#0f172a;border-radius:8px;padding:10px 14px">' +
+      '<div style="flex:1"><div style="font-weight:600">' + player + '</div><div style="color:#94a3b8;font-size:13px">' + team + '</div></div>' +
+      '<input type="number" id="run-' + team.replace(/ /g,'_') + '" value="' + (runs[team]!==undefined?runs[team]:'') + '" min="0" placeholder="Runs" style="width:75px;text-align:center"/></div>';
+  }
   return '<div class="card" style="max-width:520px">' +
     '<h3 style="font-weight:700;margin-bottom:14px">Enter / Override Runs</h3>' +
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:18px;flex-wrap:wrap">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="runs-week" value="' + w + '" min="1" max="' + (state.data.weekCount||26) + '" style="width:60px"/>' +
+    '<input type="number" id="runs-week" value="' + w + '" min="1" max="' + (appState.data.weekCount||26) + '" style="width:60px"/>' +
     '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="changeRunsWeek()">Load</button>' +
-    '<button id="fetch-btn" style="padding:7px 14px;background:#0891b2;color:#fff;font-size:13px" onclick="fetchLiveRuns()">Fetch Live</button></div>' +
-    '<div id="runs-rows">' + rows + '</div>' +
-    (entries.length > 0 ? '<button style="margin-top:8px;padding:10px 24px;background:#2563eb;color:#fff" onclick="saveRuns(' + w + ')">Save Runs</button>' : '') +
-    '</div>';
+    '<button id="fetch-btn" style="padding:7px 14px;background:#0891b2;color:#fff;font-size:13px" onclick="fetchLiveRunsAdmin()">Fetch Live</button></div>' +
+    '<div id="runs-rows">' + (entries.length===0?'<p style="color:#94a3b8">No picks for this week yet.</p>':rows) + '</div>' +
+    (entries.length>0?'<button style="margin-top:8px;padding:10px 24px;background:#2563eb;color:#fff" onclick="saveRuns(' + w + ')">Save Runs</button>':'') + '</div>';
 }
-
-window.changeRunsWeek = function() {
-  const w = Number(document.getElementById("runs-week").value);
-  document.getElementById("admin-panel").innerHTML = renderAdminRuns(w);
-};
-
+window.changeRunsWeek = function() { document.getElementById("admin-panel").innerHTML = renderAdminRuns(Number(document.getElementById("runs-week").value)); };
 window.saveRuns = async function(w) {
-  const picks = (state.data.weeks && state.data.weeks[w] && state.data.weeks[w].picks) || {};
-  const runs = {};
-  Object.values(picks).forEach(function(team) {
-    const el = document.getElementById("run-" + team.replace(/ /g,'_'));
-    if (el && el.value !== "") runs[team] = Number(el.value);
-  });
-  const weeks = Object.assign({}, state.data.weeks);
-  weeks[w] = Object.assign({}, weeks[w], { runs: runs });
-  await saveData(Object.assign({}, state.data, { weeks: weeks }));
-  flash("Runs saved for Week " + w + "!");
+  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
+  var runs = {};
+  var teams = Object.values(picks);
+  for (var i = 0; i < teams.length; i++) {
+    var el = document.getElementById("run-" + teams[i].replace(/ /g,'_'));
+    if (el && el.value !== "") runs[teams[i]] = Number(el.value);
+  }
+  var d = JSON.parse(JSON.stringify(appState.data));
+  d.weeks = d.weeks || {}; d.weeks[w] = d.weeks[w] || {};
+  d.weeks[w].runs = runs;
+  await saveData(d); flash("Runs saved for Week " + w + "!");
+};
+window.fetchLiveRunsAdmin = async function() {
+  var w = Number(document.getElementById("runs-week").value);
+  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
+  var teams = Object.values(picks);
+  if (!teams.length) { flash("No picks for this week.", "#b45309"); return; }
+  if (!appState.data.seasonStart) { flash("Set season start date first.", "#b45309"); return; }
+  var btn = document.getElementById("fetch-btn");
+  btn.innerHTML = '<span class="spinner"></span>Fetching...'; btn.disabled = true;
+  var totals = await fetchRunsFromAPI(w);
+  var found = 0;
+  for (var i = 0; i < teams.length; i++) {
+    var el = document.getElementById("run-" + teams[i].replace(/ /g,'_'));
+    if (el && totals[teams[i]] !== undefined) { el.value = totals[teams[i]]; found++; }
+  }
+  flash(found ? "Fetched runs for " + found + "/" + teams.length + " teams!" : "No final game data found yet.", "#0891b2");
+  btn.innerHTML = "Fetch Live"; btn.disabled = false;
 };
 
-window.fetchLiveRuns = async function() {
-  const w = Number(document.getElementById("runs-week").value);
-  const picks = (state.data.weeks && state.data.weeks[w] && state.data.weeks[w].picks) || {};
-  const teams = Object.values(picks);
-  if (!teams.length) { flash("No picks for this week.", "#b45309"); return; }
-  if (!state.data.seasonStart) { flash("Set season start date first.", "#b45309"); return; }
-  const btn = document.getElementById("fetch-btn");
-  btn.innerHTML = '<span class="spinner"></span>Fetching...'; btn.disabled = true;
+async function fetchRunsFromAPI(w) {
+  if (!appState.data.seasonStart) return {};
   try {
-    const start = new Date(state.data.seasonStart);
-    const ws = new Date(start); ws.setDate(start.getDate() + (w-1)*7);
-    const we = new Date(ws); we.setDate(ws.getDate() + 6);
+    var start = new Date(appState.data.seasonStart);
+    var ws = new Date(start); ws.setDate(start.getDate() + (w-1)*7);
+    var we = new Date(ws); we.setDate(ws.getDate() + 6);
     function fmt(d) { return d.toISOString().split("T")[0]; }
-    const url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=" + fmt(ws) + "&endDate=" + fmt(we) + "&gameType=R&fields=dates,date,games,gamePk,teams,away,home,team,name,score,status,abstractGameState,detailedState";
-    const res = await fetch(url);
-    const json = await res.json();
-    const totals = {};
-    const dates = json.dates || [];
-    for (let i = 0; i < dates.length; i++) {
-      const games = dates[i].games || [];
-      for (let j = 0; j < games.length; j++) {
-        const g = games[j];
-        const detail = (g.status && g.status.detailedState && g.status.detailedState.toLowerCase()) || "";
-        const isFinal = g.status && g.status.abstractGameState === "Final";
-        const isSuspended = detail.indexOf("suspended") >= 0 || detail.indexOf("resume") >= 0;
-        if (!isFinal && !isSuspended) continue;
-        const aw = g.teams && g.teams.away;
-        const hm = g.teams && g.teams.home;
+    var url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=" + fmt(ws) + "&endDate=" + fmt(we) + "&gameType=R&fields=dates,games,teams,away,home,team,name,score,status,abstractGameState,detailedState";
+    var res = await fetch(url);
+    var json = await res.json();
+    var totals = {};
+    var dates = json.dates || [];
+    for (var i = 0; i < dates.length; i++) {
+      var games = dates[i].games || [];
+      for (var j = 0; j < games.length; j++) {
+        var g = games[j];
+        var detail = (g.status && g.status.detailedState) ? g.status.detailedState.toLowerCase() : "";
+        var isFinal = g.status && g.status.abstractGameState === "Final";
+        var isSusp = detail.indexOf("suspended") >= 0 || detail.indexOf("resume") >= 0;
+        if (!isFinal && !isSusp) continue;
+        var aw = g.teams && g.teams.away; var hm = g.teams && g.teams.home;
         if (aw && aw.team && aw.team.name) totals[aw.team.name] = (totals[aw.team.name]||0) + (aw.score||0);
         if (hm && hm.team && hm.team.name) totals[hm.team.name] = (totals[hm.team.name]||0) + (hm.score||0);
       }
     }
-    let found = 0;
-    teams.forEach(function(team) {
-      const el = document.getElementById("run-" + team.replace(/ /g,'_'));
-      if (el && totals[team] !== undefined) { el.value = totals[team]; found++; }
-    });
-    flash(found ? "Fetched runs for " + found + "/" + teams.length + " teams!" : "No final game data found yet.", "#0891b2");
-  } catch(e) { flash("MLB API fetch failed — enter manually.", "#dc2626"); }
-  btn.innerHTML = "Fetch Live"; btn.disabled = false;
-};
+    return totals;
+  } catch(e) { return {}; }
+}
+
+async function fetchScheduleFromAPI(w) {
+  if (scheduleCache[w]) return scheduleCache[w];
+  if (!appState.data.seasonStart) return {};
+  try {
+    var start = new Date(appState.data.seasonStart);
+    var ws = new Date(start); ws.setDate(start.getDate() + (w-1)*7);
+    var we = new Date(ws); we.setDate(ws.getDate() + 6);
+    function fmt(d) { return d.toISOString().split("T")[0]; }
+    var url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=" + fmt(ws) + "&endDate=" + fmt(we) + "&gameType=R&fields=dates,games,teams,away,home,team,name,status,abstractGameState,detailedState";
+    var res = await fetch(url);
+    var json = await res.json();
+    var counts = {};
+    var dates = json.dates || [];
+    for (var i = 0; i < dates.length; i++) {
+      var games = dates[i].games || [];
+      for (var j = 0; j < games.length; j++) {
+        var g = games[j];
+        var detail = (g.status && g.status.detailedState) ? g.status.detailedState.toLowerCase() : "";
+        var isSusp = detail.indexOf("suspended") >= 0 || detail.indexOf("resume") >= 0;
+        var val = isSusp ? 0.5 : 1;
+        var aw = g.teams && g.teams.away && g.teams.away.team && g.teams.away.team.name;
+        var hm = g.teams && g.teams.home && g.teams.home.team && g.teams.home.team.name;
+        if (aw) counts[aw] = (counts[aw]||0) + val;
+        if (hm) counts[hm] = (counts[hm]||0) + val;
+      }
+    }
+    var formatted = {};
+    for (var team in counts) formatted[team] = (counts[team] % 1 === 0) ? counts[team] : counts[team].toFixed(1);
+    scheduleCache[w] = formatted;
+    return formatted;
+  } catch(e) { return {}; }
+}
 
 function renderAdminManage(w) {
-  const locked = (state.data.weeks && state.data.weeks[w] && state.data.weeks[w].locked) || false;
+  var locked = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].locked) || false;
   return '<div class="card" style="max-width:400px">' +
     '<h3 style="font-weight:700;margin-bottom:14px">Week Management</h3>' +
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:18px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="manage-week" value="' + w + '" min="1" max="' + (state.data.weekCount||26) + '" style="width:60px"/>' +
+    '<input type="number" id="manage-week" value="' + w + '" min="1" max="' + (appState.data.weekCount||26) + '" style="width:60px"/>' +
     '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadManage()">Load</button></div>' +
     '<div style="background:#0f172a;border-radius:8px;padding:12px 16px;margin-bottom:16px">' +
     '<div style="color:#94a3b8;font-size:13px;margin-bottom:4px">Status - Week ' + w + '</div>' +
@@ -493,92 +529,81 @@ function renderAdminManage(w) {
     '<button style="padding:10px 18px;background:' + (locked?"#16a34a":"#ef4444") + ';color:#fff" onclick="toggleLock(' + w + ',' + locked + ')">' + (locked?"Unlock Week":"Lock Week") + '</button>' +
     '<button style="padding:10px 18px;background:#b45309;color:#fff" onclick="clearPicks(' + w + ')">Clear Picks</button></div></div>';
 }
-window.loadManage = function() {
-  document.getElementById("admin-panel").innerHTML = renderAdminManage(Number(document.getElementById("manage-week").value));
-};
+window.loadManage = function() { document.getElementById("admin-panel").innerHTML = renderAdminManage(Number(document.getElementById("manage-week").value)); };
 window.toggleLock = async function(w, locked) {
-  const weeks = Object.assign({}, state.data.weeks);
-  weeks[w] = Object.assign({}, weeks[w], { locked: !locked });
-  await saveData(Object.assign({}, state.data, { weeks: weeks }));
-  flash("Week " + w + " " + (!locked ? "locked" : "unlocked") + "!");
+  var d = JSON.parse(JSON.stringify(appState.data));
+  d.weeks = d.weeks||{}; d.weeks[w] = d.weeks[w]||{}; d.weeks[w].locked = !locked;
+  await saveData(d); flash("Week " + w + " " + (!locked?"locked":"unlocked") + "!");
   document.getElementById("admin-panel").innerHTML = renderAdminManage(w);
 };
 window.clearPicks = async function(w) {
   if (!confirm("Clear all picks for Week " + w + "?")) return;
-  const weeks = Object.assign({}, state.data.weeks);
-  weeks[w] = Object.assign({}, weeks[w], { picks: {} });
-  await saveData(Object.assign({}, state.data, { weeks: weeks }));
-  flash("Week " + w + " picks cleared.");
+  var d = JSON.parse(JSON.stringify(appState.data));
+  d.weeks = d.weeks||{}; d.weeks[w] = d.weeks[w]||{}; d.weeks[w].picks = {};
+  await saveData(d); flash("Week " + w + " picks cleared.");
 };
 
 function renderAdminPicks(w) {
-  const players = state.data.players || [];
-  const picks = (state.data.weeks && state.data.weeks[w] && state.data.weeks[w].picks) || {};
-  const taken = new Set(Object.values(picks));
-  const rows = players.map(function(p) {
-    const current = picks[p.name];
-    const used = usedTeams(p.name);
-    const teamOpts = MLB_TEAMS.map(function(t) {
-      const isTaken = taken.has(t) && t !== current;
-      const isUsed  = used.has(t) && t !== current;
-      const dis = isTaken || isUsed;
-      return '<option value="' + t + '"' + (current===t?" selected":"") + (dis?" disabled":"") + '>' +
-        t + (isTaken?" (taken)": isUsed?" (used)":"") + '</option>';
-    }).join("");
-    return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;background:#0f172a;border-radius:8px;padding:10px 14px;flex-wrap:wrap">' +
-      '<div style="min-width:120px;font-weight:600">' + p.name + '</div>' +
-      '<select id="apick-' + p.name.replace(/ /g,'_') + '" style="flex:1;min-width:180px">' +
-      '<option value="">No pick</option>' + teamOpts + '</select></div>';
-  }).join("");
+  var players = appState.data.players || [];
+  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
+  var takenList = [];
+  for (var p in picks) takenList.push(picks[p]);
+  var rows = "";
+  for (var i = 0; i < players.length; i++) {
+    var pl = players[i];
+    var current = picks[pl.name] || "";
+    var used = usedTeams(pl.name);
+    var opts = '<option value="">No pick</option>';
+    for (var j = 0; j < MLB_TEAMS.length; j++) {
+      var t = MLB_TEAMS[j];
+      var isTaken = takenList.indexOf(t) >= 0 && t !== current;
+      var isUsed = used.indexOf(t) >= 0 && t !== current;
+      var dis = isTaken || isUsed;
+      opts += '<option value="' + t + '"' + (current===t?" selected":"") + (dis?" disabled":"") + '>' + t + (isTaken?" (taken)":isUsed?" (used)":"") + '</option>';
+    }
+    rows += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;background:#0f172a;border-radius:8px;padding:10px 14px;flex-wrap:wrap">' +
+      '<div style="min-width:120px;font-weight:600">' + pl.name + '</div>' +
+      '<select id="apick-' + pl.name.replace(/ /g,'_') + '" style="flex:1;min-width:180px">' + opts + '</select></div>';
+  }
   return '<div class="card" style="max-width:580px">' +
     '<h3 style="font-weight:700;margin-bottom:14px">Enter Pick for Player</h3>' +
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:18px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="apick-week" value="' + w + '" min="1" max="' + (state.data.weekCount||26) + '" style="width:60px"/>' +
+    '<input type="number" id="apick-week" value="' + w + '" min="1" max="' + (appState.data.weekCount||26) + '" style="width:60px"/>' +
     '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadAdminPicks()">Load</button></div>' +
     '<div id="apick-rows">' + rows + '</div>' +
     '<div style="margin-top:16px;display:flex;gap:10px">' +
     '<button style="padding:10px 24px;background:#2563eb;color:#fff" onclick="saveAdminPicks(' + w + ')">Save Picks</button>' +
     '<button style="padding:10px 24px;background:#b45309;color:#fff" onclick="clearAdminPick(' + w + ')">Clear All Picks</button></div></div>';
 }
-
-window.loadAdminPicks = function() {
-  const w = Number(document.getElementById("apick-week").value);
-  document.getElementById("admin-panel").innerHTML = renderAdminPicks(w);
-};
-
+window.loadAdminPicks = function() { document.getElementById("admin-panel").innerHTML = renderAdminPicks(Number(document.getElementById("apick-week").value)); };
 window.saveAdminPicks = async function(w) {
-  const players = state.data.players || [];
-  const existingPicks = (state.data.weeks && state.data.weeks[w] && state.data.weeks[w].picks) || {};
-  const newPicks = Object.assign({}, existingPicks);
-  const selections = {};
-  players.forEach(function(p) {
-    const el = document.getElementById("apick-" + p.name.replace(/ /g,'_'));
-    if (el && el.value) selections[p.name] = el.value;
-  });
-  const teamCount = {};
-  Object.values(selections).forEach(function(t) { teamCount[t] = (teamCount[t]||0)+1; });
-  const dupes = Object.entries(teamCount).filter(function(e) { return e[1]>1; }).map(function(e) { return e[0]; });
+  var players = appState.data.players || [];
+  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) ? JSON.parse(JSON.stringify(appState.data.weeks[w].picks)) : {};
+  var teamCount = {};
+  for (var i = 0; i < players.length; i++) {
+    var el = document.getElementById("apick-" + players[i].name.replace(/ /g,'_'));
+    if (el && el.value) { teamCount[el.value] = (teamCount[el.value]||0)+1; }
+  }
+  var dupes = [];
+  for (var t in teamCount) { if (teamCount[t]>1) dupes.push(t); }
   if (dupes.length) { flash("Conflict: " + dupes.join(", ") + " selected by more than one player.", "#dc2626"); return; }
-  players.forEach(function(p) {
-    const el = document.getElementById("apick-" + p.name.replace(/ /g,'_'));
-    if (!el) return;
-    if (el.value) newPicks[p.name] = el.value;
-    else delete newPicks[p.name];
-  });
-  const weeks = Object.assign({}, state.data.weeks);
-  weeks[w] = Object.assign({}, weeks[w], { picks: newPicks });
-  await saveData(Object.assign({}, state.data, { weeks: weeks }));
-  flash("Picks saved for Week " + w + "!");
+  for (var j = 0; j < players.length; j++) {
+    var el2 = document.getElementById("apick-" + players[j].name.replace(/ /g,'_'));
+    if (!el2) continue;
+    if (el2.value) picks[players[j].name] = el2.value;
+    else delete picks[players[j].name];
+  }
+  var d = JSON.parse(JSON.stringify(appState.data));
+  d.weeks = d.weeks||{}; d.weeks[w] = d.weeks[w]||{}; d.weeks[w].picks = picks;
+  await saveData(d); flash("Picks saved for Week " + w + "!");
   document.getElementById("admin-panel").innerHTML = renderAdminPicks(w);
 };
-
 window.clearAdminPick = async function(w) {
   if (!confirm("Clear ALL picks for Week " + w + "?")) return;
-  const weeks = Object.assign({}, state.data.weeks);
-  weeks[w] = Object.assign({}, weeks[w], { picks: {} });
-  await saveData(Object.assign({}, state.data, { weeks: weeks }));
-  flash("All picks cleared for Week " + w + ".");
+  var d = JSON.parse(JSON.stringify(appState.data));
+  d.weeks = d.weeks||{}; d.weeks[w] = d.weeks[w]||{}; d.weeks[w].picks = {};
+  await saveData(d); flash("All picks cleared for Week " + w + ".");
   document.getElementById("admin-panel").innerHTML = renderAdminPicks(w);
 };
 
@@ -590,45 +615,49 @@ function renderAdminReset() {
     '<div style="background:#0f172a;border-radius:10px;padding:16px">' +
     '<div style="font-weight:700;margin-bottom:4px">Soft Reset</div>' +
     '<div style="color:#94a3b8;font-size:13px;margin-bottom:12px">Clears all weeks, picks, runs, and season dates but keeps player names.</div>' +
-    '<button style="padding:10px 20px;background:#b45309;color:#fff" onclick="resetPool(false)">Reset Season Data Only</button></div>' +
+    '<button style="padding:10px 20px;background:#b45309;color:#fff" onclick="doResetPool(false)">Reset Season Data Only</button></div>' +
     '<div style="background:#0f172a;border-radius:10px;padding:16px">' +
     '<div style="font-weight:700;margin-bottom:4px">Full Reset</div>' +
     '<div style="color:#94a3b8;font-size:13px;margin-bottom:12px">Wipes everything including player names. Blank slate.</div>' +
-    '<button style="padding:10px 20px;background:#ef4444;color:#fff" onclick="resetPool(true)">Full Reset - Wipe Everything</button></div>' +
-    '</div></div>';
+    '<button style="padding:10px 20px;background:#ef4444;color:#fff" onclick="doResetPool(true)">Full Reset - Wipe Everything</button></div></div></div>';
 }
-
-window.resetPool = async function(fullReset) {
-  const msg = fullReset
-    ? "FULL RESET: Wipes ALL data including player names. Type RESET to confirm:"
-    : "SOFT RESET: Clears picks, runs, and season dates but keeps player names. Type RESET to confirm:";
-  const answer = prompt(msg);
-  if (answer !== "RESET") { flash("Reset cancelled - you must type RESET exactly.", "#b45309"); return; }
-  const newData = fullReset
-    ? defaultData()
-    : Object.assign(defaultData(), { players: (state.data.players||[]).map(function(p) { return { name: p.name, draftOrder: {} }; }) });
-  _scheduleCache = {};
+window.doResetPool = async function(fullReset) {
+  var answer = prompt(fullReset ? "FULL RESET: Wipes ALL data. Type RESET to confirm:" : "SOFT RESET: Clears picks/runs/dates, keeps names. Type RESET to confirm:");
+  if (answer !== "RESET") { flash("Reset cancelled.", "#b45309"); return; }
+  var newData;
+  if (fullReset) {
+    newData = defaultData();
+  } else {
+    newData = defaultData();
+    var players = appState.data.players || [];
+    for (var i = 0; i < players.length; i++) newData.players.push({ name: players[i].name, draftOrder: {} });
+  }
+  scheduleCache = {}; liveRunsCache = {};
   await saveData(newData);
   flash(fullReset ? "Pool fully reset!" : "Season data cleared - player names kept!", "#b45309");
   document.getElementById("admin-panel").innerHTML = renderAdminReset();
 };
 
-// Player view
+// ── PLAYER ─────────────────────────────────────────────────
 function renderPlayer() {
-  const name = state.user.name;
-  const w = currentWeek();
-  const myPick = state.data.weeks && state.data.weeks[w] && state.data.weeks[w].picks && state.data.weeks[w].picks[name];
-  const myRuns = myPick != null && state.data.weeks[w].runs ? state.data.weeks[w].runs[myPick] : null;
-  const used = usedTeams(name);
-  const taken = takenTeams(w);
-  const playerIndex = (state.data.players || []).findIndex(function(x) { return x.name === name; });
-  const pos = playerIndex >= 0 ? getDraftPosition(playerIndex, w) + 1 : null;
-  const myTurn = isMyTurn(w, name);
-  const locked = (state.data.weeks && state.data.weeks[w] && state.data.weeks[w].locked) || false;
+  var name = appState.user.name;
+  var w = currentWeek();
+  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
+  var runs  = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].runs)  || {};
+  var myPick = picks[name] || null;
+  var myRuns = (myPick && runs[myPick] !== undefined) ? runs[myPick] : null;
+  var used = usedTeams(name);
+  var taken = takenTeamsThisWeek(w);
+  var players = appState.data.players || [];
+  var playerIndex = -1;
+  for (var i = 0; i < players.length; i++) { if (players[i].name === name) { playerIndex = i; break; } }
+  var pos = playerIndex >= 0 ? getDraftPosition(playerIndex, w) + 1 : null;
+  var myTurn = isMyTurn(w, name);
+  var locked = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].locked) || false;
 
-  let statusBox;
+  var statusBox;
   if (myPick) {
-    statusBox = '<div style="margin-top:10px;padding:12px 16px;background:#16a34a22;border-radius:8px;border:1px solid #16a34a">Picked: <strong>' + myPick + '</strong>' + (myRuns !== null ? ' &nbsp;<span style="color:#fbbf24">' + myRuns + ' runs</span>' : '') + '</div>';
+    statusBox = '<div style="margin-top:10px;padding:12px 16px;background:#16a34a22;border-radius:8px;border:1px solid #16a34a">Picked: <strong>' + myPick + '</strong>' + (myRuns!==null?' <span style="color:#fbbf24">' + myRuns + ' runs</span>':'') + '</div>';
   } else if (locked) {
     statusBox = '<div style="margin-top:10px;padding:10px 16px;background:#ef444422;border:1px solid #ef4444;border-radius:8px;color:#ef4444;font-weight:600">Week is locked by commissioner.</div>';
   } else if (myTurn) {
@@ -637,211 +666,151 @@ function renderPlayer() {
     statusBox = '<div style="margin-top:10px;color:#94a3b8;font-size:14px">Waiting for your turn in the draft order...</div>';
   }
 
-  let teamGrid = "";
+  var teamGrid = "";
   if (!myPick && !locked) {
-    const btns = MLB_TEAMS.map(function(team) {
-      const isTaken = taken.has(team), isUsed = used.has(team), dis = isTaken || isUsed;
-      return '<button class="team-btn' + (isTaken?' taken':isUsed?' used':'') + '" ' + (dis?'disabled':'') + ' onclick="makePick(\'' + team.replace(/'/g,"\\'") + '\',' + w + ')">' +
+    var btns = "";
+    for (var t = 0; t < MLB_TEAMS.length; t++) {
+      var team = MLB_TEAMS[t];
+      var isTaken = taken.indexOf(team) >= 0;
+      var isUsed  = used.indexOf(team) >= 0;
+      var dis = isTaken || isUsed;
+      btns += '<button class="team-btn' + (isTaken?' taken':isUsed?' used':'') + '" ' + (dis?'disabled':'') + ' onclick="makePick(\'' + team.replace(/'/g,"\\'") + '\',' + w + ')">' +
         team + (isTaken?' <span style="font-size:11px;color:#ef4444">taken</span>':isUsed?' <span style="font-size:11px;color:#9333ea">used</span>':'') + '</button>';
-    }).join("");
+    }
     teamGrid = '<div class="card" style="margin-top:16px"><h3 style="font-weight:700;margin-bottom:14px">Select Your Team - Week ' + w + '</h3><div class="team-grid">' + btns + '</div></div>';
   }
 
-  const histRows = Array.from({length: state.data.weekCount||26}, function(_,i) { return i+1; }).map(function(wk) {
-    const pick = state.data.weeks && state.data.weeks[wk] && state.data.weeks[wk].picks && state.data.weeks[wk].picks[name];
-    const r = pick && state.data.weeks[wk].runs ? state.data.weeks[wk].runs[pick] : null;
-    return pick ? '<tr><td style="color:#94a3b8">Wk ' + wk + '</td><td style="font-weight:600">' + pick + '</td><td style="color:#fbbf24;text-align:right">' + (r!=null?r+" runs":"--") + '</td></tr>' : "";
-  }).join("");
+  var histRows = "";
+  for (var wk = 1; wk <= (appState.data.weekCount||26); wk++) {
+    var wPick = (appState.data.weeks && appState.data.weeks[wk] && appState.data.weeks[wk].picks && appState.data.weeks[wk].picks[name]) || null;
+    var wRuns = (wPick && appState.data.weeks[wk].runs) ? appState.data.weeks[wk].runs[wPick] : null;
+    if (wPick) histRows += '<tr><td style="color:#94a3b8">Wk ' + wk + '</td><td style="font-weight:600">' + wPick + '</td><td style="color:#fbbf24;text-align:right">' + (wRuns!==null?wRuns+" runs":"--") + '</td></tr>';
+  }
 
   return '<div style="display:flex;gap:8px;margin-bottom:20px">' +
     '<button class="tab-btn active" id="ptab-pick" onclick="playerTab(\'pick\')">Make Pick</button>' +
     '<button class="tab-btn" id="ptab-history" onclick="playerTab(\'history\')">My History</button></div>' +
-    '<div id="player-panel">' +
-    '<div class="card"><div style="font-weight:800;font-size:18px;margin-bottom:4px">Week ' + w + ' - ' + name + '</div>' +
-    (pos ? '<div style="color:#94a3b8;font-size:14px">Draft position this week: <strong style="color:#38bdf8">#' + pos + '</strong></div>' : '') +
+    '<div id="player-panel"><div class="card">' +
+    '<div style="font-weight:800;font-size:18px;margin-bottom:4px">Week ' + w + ' - ' + name + '</div>' +
+    (pos?'<div style="color:#94a3b8;font-size:14px">Draft position this week: <strong style="color:#38bdf8">#' + pos + '</strong></div>':'') +
     statusBox + '</div>' + teamGrid + '</div>' +
     '<div id="player-history" style="display:none"><div class="card">' +
     '<h3 style="font-weight:700;margin-bottom:14px">My Season History</h3>' +
-    (histRows ? '<table><thead><tr><th>Week</th><th>Team</th><th style="text-align:right">Runs</th></tr></thead><tbody>' + histRows + '</tbody></table>' : '<p style="color:#94a3b8">No picks recorded yet.</p>') +
+    (histRows?'<table><thead><tr><th>Week</th><th>Team</th><th style="text-align:right">Runs</th></tr></thead><tbody>' + histRows + '</tbody></table>':'<p style="color:#94a3b8">No picks recorded yet.</p>') +
     '</div></div>';
 }
-
 window.playerTab = function(t) {
-  document.getElementById("player-panel").style.display = t==="pick" ? "block" : "none";
-  document.getElementById("player-history").style.display = t==="history" ? "block" : "none";
-  document.getElementById("ptab-pick").classList.toggle("active", t==="pick");
-  document.getElementById("ptab-history").classList.toggle("active", t==="history");
+  document.getElementById("player-panel").style.display = t==="pick"?"block":"none";
+  document.getElementById("player-history").style.display = t==="history"?"block":"none";
+  document.getElementById("ptab-pick").classList.toggle("active",t==="pick");
+  document.getElementById("ptab-history").classList.toggle("active",t==="history");
 };
-
 window.makePick = async function(team, w) {
-  const name = state.user.name;
-  const wd = (state.data.weeks && state.data.weeks[w]) || {};
-  if (wd.locked) { flash("Week is locked - contact commissioner.", "#dc2626"); return; }
-  if (takenTeams(w).has(team)) { flash("That team is already taken this week!", "#dc2626"); return; }
-  if (usedTeams(name).has(team)) { flash("You already used that team this season!", "#dc2626"); return; }
+  var name = appState.user.name;
+  var wd = (appState.data.weeks && appState.data.weeks[w]) || {};
+  if (wd.locked) { flash("Week is locked.", "#dc2626"); return; }
+  if (takenTeamsThisWeek(w).indexOf(team) >= 0) { flash("That team is already taken!", "#dc2626"); return; }
+  if (usedTeams(name).indexOf(team) >= 0) { flash("You already used that team this season!", "#dc2626"); return; }
   if (!isMyTurn(w, name)) { flash("It's not your turn yet!", "#dc2626"); return; }
-  const picks = Object.assign({}, wd.picks, {});
-  picks[name] = team;
-  const weeks = Object.assign({}, state.data.weeks);
-  weeks[w] = Object.assign({}, wd, { picks: picks });
-  await saveData(Object.assign({}, state.data, { weeks: weeks }));
-  flash("Picked " + team + " for Week " + w + "!");
+  var d = JSON.parse(JSON.stringify(appState.data));
+  d.weeks = d.weeks||{}; d.weeks[w] = d.weeks[w]||{}; d.weeks[w].picks = d.weeks[w].picks||{};
+  d.weeks[w].picks[name] = team;
+  await saveData(d); flash("Picked " + team + " for Week " + w + "!");
 };
 
-// Draft board
-async function fetchWeekSchedule(w) {
-  if (_scheduleCache[w]) return _scheduleCache[w];
-  if (!state.data.seasonStart) return {};
-  try {
-    const start = new Date(state.data.seasonStart);
-    const ws = new Date(start); ws.setDate(start.getDate()+(w-1)*7);
-    const we = new Date(ws); we.setDate(ws.getDate()+6);
-    function fmt(d) { return d.toISOString().split("T")[0]; }
-    const url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=" + fmt(ws) + "&endDate=" + fmt(we) + "&gameType=R&fields=dates,games,teams,away,home,team,name,status,abstractGameState,detailedState";
-    const res = await fetch(url);
-    const json = await res.json();
-    const counts = {};
-    const dates = json.dates || [];
-    for (let i = 0; i < dates.length; i++) {
-      const games = dates[i].games || [];
-      for (let j = 0; j < games.length; j++) {
-        const g = games[j];
-        const detail = (g.status && g.status.detailedState && g.status.detailedState.toLowerCase()) || "";
-        const isSuspended = detail.indexOf("suspended") >= 0 || detail.indexOf("resume") >= 0;
-        const val = isSuspended ? 0.5 : 1;
-        const aw = g.teams && g.teams.away && g.teams.away.team && g.teams.away.team.name;
-        const hm = g.teams && g.teams.home && g.teams.home.team && g.teams.home.team.name;
-        if (aw) counts[aw] = (counts[aw]||0) + val;
-        if (hm) counts[hm] = (counts[hm]||0) + val;
-      }
-    }
-    const formatted = {};
-    Object.keys(counts).forEach(function(k) { formatted[k] = counts[k] % 1 === 0 ? counts[k] : counts[k].toFixed(1); });
-    _scheduleCache[w] = formatted;
-    return formatted;
-  } catch(e) { return {}; }
-}
-
+// ── DRAFT BOARD ─────────────────────────────────────────────
 function renderDraftShell() {
-  const w = currentWeek();
+  var w = currentWeek();
   return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">' +
     '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin:0">Draft Board</h2>' +
     '<div style="margin-left:auto;display:flex;gap:8px;align-items:center">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="draft-week" value="' + w + '" min="1" max="' + (state.data.weekCount||26) + '" style="width:60px"/>' +
-    '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadDraft()">Load</button></div></div>' +
+    '<input type="number" id="draft-week" value="' + w + '" min="1" max="' + (appState.data.weekCount||26) + '" style="width:60px"/>' +
+    '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadDraftTable(Number(document.getElementById(\'draft-week\').value))">Load</button></div></div>' +
     '<div id="draft-table"><div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div></div>';
 }
-
-async function renderDraftTable(w) {
-  const ordered = orderedPlayers(w);
-  const picks = (state.data.weeks && state.data.weeks[w] && state.data.weeks[w].picks) || {};
-  const runs  = (state.data.weeks && state.data.weeks[w] && state.data.weeks[w].runs)  || {};
-  const games = await fetchWeekSchedule(w);
-  if (!ordered.length) return '<p style="color:#94a3b8">No players configured yet.</p>';
-  const rows = ordered.map(function(p, i) {
-    const team = picks[p.name];
-    const r = team ? runs[team] : null;
-    const g = team ? (games[team] != null ? games[team] : "--") : "--";
-    return '<tr>' +
-      '<td style="color:#38bdf8;font-weight:800">#' + (i+1) + '</td>' +
+async function loadDraftTable(w) {
+  var el = document.getElementById("draft-table");
+  if (!el) return;
+  el.innerHTML = '<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div>';
+  var ordered = orderedPlayers(w);
+  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
+  var runs  = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].runs)  || {};
+  var games = await fetchScheduleFromAPI(w);
+  if (!ordered.length) { el.innerHTML = '<p style="color:#94a3b8">No players configured yet.</p>'; return; }
+  var rows = "";
+  for (var i = 0; i < ordered.length; i++) {
+    var p = ordered[i];
+    var team = picks[p.name] || null;
+    var r = (team && runs[team] !== undefined) ? runs[team] : null;
+    var g = team ? (games[team] !== undefined ? games[team] : "--") : "--";
+    rows += '<tr><td style="color:#38bdf8;font-weight:800">#' + (i+1) + '</td>' +
       '<td style="font-weight:600">' + p.name + '</td>' +
       '<td style="color:' + (team?"#f1f5f9":"#475569") + '">' + (team||"<em>Pending...</em>") + '</td>' +
       '<td style="text-align:center;color:#34d399;font-weight:700">' + g + '</td>' +
-      '<td style="text-align:right;font-weight:700;color:#fbbf24">' + (r!=null?r:"--") + '</td></tr>';
-  }).join("");
-  return '<div class="card" style="padding:0;overflow:hidden"><table>' +
+      '<td style="text-align:right;font-weight:700;color:#fbbf24">' + (r!==null?r:"--") + '</td></tr>';
+  }
+  el.innerHTML = '<div class="card" style="padding:0;overflow:hidden"><table>' +
     '<thead><tr><th>Pick #</th><th>Player</th><th>Team</th><th style="text-align:center">Games</th><th style="text-align:right">Runs</th></tr></thead>' +
     '<tbody>' + rows + '</tbody></table></div>';
 }
+window.loadDraftTable = loadDraftTable;
 
-window.loadDraft = async function() {
-  const w = Number(document.getElementById("draft-week").value);
-  document.getElementById("draft-table").innerHTML = '<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div>';
-  document.getElementById("draft-table").innerHTML = await renderDraftTable(w);
-};
-
-let _liveRuns = {}; // {weekNum: {team: runs}} — live overlay, not saved to Firebase
-
-async function fetchLiveRunsForWeek(w) {
-  if (!state.data.seasonStart) return {};
-  try {
-    const start = new Date(state.data.seasonStart);
-    const ws = new Date(start); ws.setDate(start.getDate()+(w-1)*7);
-    const we = new Date(ws); we.setDate(ws.getDate()+6);
-    function fmt(d) { return d.toISOString().split("T")[0]; }
-    const url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=" + fmt(ws) + "&endDate=" + fmt(we) + "&gameType=R&fields=dates,games,teams,away,home,team,name,score,status,abstractGameState,detailedState";
-    const res = await fetch(url);
-    const json = await res.json();
-    const totals = {};
-    const dates = json.dates || [];
-    for (let i = 0; i < dates.length; i++) {
-      const games = dates[i].games || [];
-      for (let j = 0; j < games.length; j++) {
-        const g = games[j];
-        const detail = (g.status && g.status.detailedState && g.status.detailedState.toLowerCase()) || "";
-        const isFinal = g.status && g.status.abstractGameState === "Final";
-        const isSuspended = detail.indexOf("suspended") >= 0 || detail.indexOf("resume") >= 0;
-        if (!isFinal && !isSuspended) continue;
-        const aw = g.teams && g.teams.away;
-        const hm = g.teams && g.teams.home;
-        if (aw && aw.team && aw.team.name) totals[aw.team.name] = (totals[aw.team.name]||0) + (aw.score||0);
-        if (hm && hm.team && hm.team.name) totals[hm.team.name] = (totals[hm.team.name]||0) + (hm.score||0);
-      }
-    }
-    return totals;
-  } catch(e) { return {}; }
-}
-
-// Standings
-function renderStandings() {
-  const w = currentWeek();
+// ── STANDINGS ───────────────────────────────────────────────
+function renderStandingsShell() {
+  var w = currentWeek();
   return '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin-bottom:16px">Standings</h2>' +
     '<div style="display:flex;gap:8px;margin-bottom:20px">' +
     '<button class="tab-btn active" id="stab-week" onclick="standTab(\'week\')">This Week</button>' +
     '<button class="tab-btn" id="stab-season" onclick="standTab(\'season\')">Full Season</button></div>' +
     '<div id="stand-week"><div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Fetching live runs...</div></div>' +
-    '<div id="stand-season" style="display:none">' + renderSeasonStandings() + '</div>';
+    '<div id="stand-season" style="display:none"></div>';
 }
 
 async function loadStandingsWeek(w) {
-  const el = document.getElementById("stand-week");
+  var el = document.getElementById("stand-week");
   if (!el) return;
   el.innerHTML = '<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Fetching live runs...</div>';
-  // Fetch live runs and merge with any admin-saved runs (admin saved takes priority)
-  const live = await fetchLiveRunsForWeek(w);
-  _liveRuns[w] = live;
-  el.innerHTML = renderWeekStandings(w, live);
-}
 
-function renderWeekStandings(w, liveRuns) {
-  liveRuns = liveRuns || _liveRuns[w] || {};
-  const picks = (state.data.weeks && state.data.weeks[w] && state.data.weeks[w].picks) || {};
-  const savedRuns = (state.data.weeks && state.data.weeks[w] && state.data.weeks[w].runs) || {};
-  // Merge: saved runs take priority, live fills in the rest
-  const mergedRuns = Object.assign({}, liveRuns, savedRuns);
-  const rows = (state.data.players || []).map(function(p) {
-    const team = picks[p.name] || null;
-    const runs = team != null ? (mergedRuns[team] != null ? mergedRuns[team] : null) : null;
-    return { name: p.name, team: team, runs: runs, payout: 0 };
-  });
-  rows.sort(function(a,b) { return (b.runs != null ? b.runs : -1) - (a.runs != null ? a.runs : -1); });
-  const withRuns = rows.filter(function(r) { return r.runs !== null; });
-  if (withRuns.length > 0) {
-    const winner = withRuns[0];
-    winner.payout = withRuns.slice(1).reduce(function(s,r) { return s + (winner.runs - r.runs); }, 0) * 2;
-  }
-  const trs = rows.map(function(r,i) {
-    return '<tr style="' + (i===0&&r.runs!==null?"background:#16a34a18":"") + '">' +
+  // Fetch live runs
+  var liveRuns = await fetchRunsFromAPI(w);
+  liveRunsCache[w] = liveRuns;
+
+  // Merge: saved runs override live
+  var savedRuns = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].runs) || {};
+  var mergedRuns = {};
+  for (var team in liveRuns) mergedRuns[team] = liveRuns[team];
+  for (var team2 in savedRuns) mergedRuns[team2] = savedRuns[team2];
+
+  // Calculate standings with merged runs
+  var rows = calcWeekStandings(w, mergedRuns);
+
+  // Build table
+  var trs = "";
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var payoutStr, payoutColor;
+    if (r.payout === null) {
+      payoutStr = "--"; payoutColor = "#475569";
+    } else if (r.payout > 0) {
+      payoutStr = "$" + r.payout.toFixed(2); payoutColor = "#16a34a";
+    } else if (r.payout < 0) {
+      payoutStr = "-$" + Math.abs(r.payout).toFixed(2); payoutColor = "#ef4444";
+    } else {
+      payoutStr = "$0.00"; payoutColor = "#475569";
+    }
+    trs += '<tr style="' + (i===0&&r.runs!==null?"background:#16a34a18":"") + '">' +
       '<td style="font-weight:800;color:' + (i===0?"#fbbf24":"#94a3b8") + '">' + (i===0?"#1":i+1) + '</td>' +
       '<td style="font-weight:600">' + r.name + '</td>' +
       '<td style="color:#94a3b8;font-size:13px">' + (r.team||"--") + '</td>' +
-      '<td style="text-align:right;font-weight:700;color:#38bdf8">' + (r.runs!=null?r.runs:"--") + '</td>' +
-      '<td style="text-align:right;font-weight:700;color:' + (r.payout>0?"#16a34a":r.payout<0?"#ef4444":"#475569") + '">' + (r.payout!=null?(r.payout>=0?"$"+r.payout.toFixed(2):"-$"+Math.abs(r.payout).toFixed(2)):"--") + '</td></tr>';
-  }).join("");
-  return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
+      '<td style="text-align:right;font-weight:700;color:#38bdf8">' + (r.runs!==null?r.runs:"--") + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:' + payoutColor + '">' + payoutStr + '</td></tr>';
+  }
+
+  el.innerHTML =
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="week-stand" value="' + w + '" min="1" max="' + (state.data.weekCount||26) + '" style="width:60px"/>' +
+    '<input type="number" id="week-stand" value="' + w + '" min="1" max="' + (appState.data.weekCount||26) + '" style="width:60px"/>' +
     '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="reloadWeekStand()">Load</button>' +
     '<span style="color:#94a3b8;font-size:12px;margin-left:8px">Live runs auto-fetched</span></div>' +
     '<div class="card" style="padding:0;overflow:hidden"><table>' +
@@ -849,38 +818,40 @@ function renderWeekStandings(w, liveRuns) {
     '<tbody>' + trs + '</tbody></table></div>';
 }
 
-function renderSeasonStandings() {
-  const rows = calcSeasonStandings();
-  const trs = rows.map(function(r,i) {
-    return '<tr style="' + (i===0?"background:#16a34a18":"") + '">' +
-      '<td style="font-weight:800;color:' + (i===0?"#fbbf24":"#94a3b8") + '">' + (i===0?"#1":i+1) + '</td>' +
-      '<td style="font-weight:600">' + r.name + '</td>' +
-      '<td style="text-align:right;color:#94a3b8">' + r.weeks + '</td>' +
-      '<td style="text-align:right;font-weight:700;color:#38bdf8">' + r.totalRuns + '</td>' +
-      '<td style="text-align:right;font-weight:700;color:' + (r.totalWinnings>0?"#16a34a":"#475569") + '">$' + r.totalWinnings.toFixed(2) + '</td></tr>';
-  }).join("");
-  return '<div class="card" style="padding:0;overflow:hidden"><table>' +
-    '<thead><tr><th>Rank</th><th>Player</th><th style="text-align:right">Weeks</th><th style="text-align:right">Total Runs</th><th style="text-align:right">Total Won</th></tr></thead>' +
-    '<tbody>' + trs + '</tbody></table></div>';
-}
-
 window.standTab = function(t) {
-  document.getElementById("stand-week").style.display = t==="week" ? "block" : "none";
-  document.getElementById("stand-season").style.display = t==="season" ? "block" : "none";
-  document.getElementById("stab-week").classList.toggle("active", t==="week");
-  document.getElementById("stab-season").classList.toggle("active", t==="season");
+  document.getElementById("stand-week").style.display = t==="week"?"block":"none";
+  document.getElementById("stand-season").style.display = t==="season"?"block":"none";
+  document.getElementById("stab-week").classList.toggle("active",t==="week");
+  document.getElementById("stab-season").classList.toggle("active",t==="season");
   if (t==="season") {
-    document.getElementById("stand-season").innerHTML = renderSeasonStandings();
+    var rows = calcSeasonStandings();
+    var trs = "";
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var wColor = r.totalWinnings > 0 ? "#16a34a" : r.totalWinnings < 0 ? "#ef4444" : "#475569";
+      var wStr = r.totalWinnings >= 0 ? "$" + r.totalWinnings.toFixed(2) : "-$" + Math.abs(r.totalWinnings).toFixed(2);
+      trs += '<tr style="' + (i===0?"background:#16a34a18":"") + '">' +
+        '<td style="font-weight:800;color:' + (i===0?"#fbbf24":"#94a3b8") + '">' + (i===0?"#1":i+1) + '</td>' +
+        '<td style="font-weight:600">' + r.name + '</td>' +
+        '<td style="text-align:right;color:#94a3b8">' + r.weeks + '</td>' +
+        '<td style="text-align:right;font-weight:700;color:#38bdf8">' + r.totalRuns + '</td>' +
+        '<td style="text-align:right;font-weight:700;color:' + wColor + '">' + wStr + '</td></tr>';
+    }
+    document.getElementById("stand-season").innerHTML =
+      '<div class="card" style="padding:0;overflow:hidden"><table>' +
+      '<thead><tr><th>Rank</th><th>Player</th><th style="text-align:right">Weeks</th><th style="text-align:right">Total Runs</th><th style="text-align:right">Total Won</th></tr></thead>' +
+      '<tbody>' + trs + '</tbody></table></div>';
   }
 };
+
 window.reloadWeekStand = function() {
-  const w = Number(document.getElementById("week-stand").value);
+  var w = Number(document.getElementById("week-stand").value);
   loadStandingsWeek(w);
 };
 
-// Boot
+// ── BOOT ────────────────────────────────────────────────────
 onSnapshot(POOL_DOC, function(snap) {
-  state.data = snap.exists() ? snap.data() : defaultData();
+  appState.data = snap.exists() ? snap.data() : defaultData();
   render();
 });
 </script>
