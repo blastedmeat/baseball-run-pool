@@ -208,7 +208,10 @@ function render() {
   if (state.view === "home")      { app.innerHTML = renderHome(); }
   if (state.view === "admin")     { app.innerHTML = renderAdmin(); }
   if (state.view === "player")    { app.innerHTML = renderPlayer(); }
-  if (state.view === "standings") { app.innerHTML = renderStandings(); }
+  if (state.view === "standings") {
+    app.innerHTML = renderStandings();
+    loadStandingsWeek(currentWeek());
+  }
   if (state.view === "draft") {
     app.innerHTML = renderDraftShell();
     renderDraftTable(currentWeek()).then(function(html) {
@@ -755,6 +758,38 @@ window.loadDraft = async function() {
   document.getElementById("draft-table").innerHTML = await renderDraftTable(w);
 };
 
+let _liveRuns = {}; // {weekNum: {team: runs}} — live overlay, not saved to Firebase
+
+async function fetchLiveRunsForWeek(w) {
+  if (!state.data.seasonStart) return {};
+  try {
+    const start = new Date(state.data.seasonStart);
+    const ws = new Date(start); ws.setDate(start.getDate()+(w-1)*7);
+    const we = new Date(ws); we.setDate(ws.getDate()+6);
+    function fmt(d) { return d.toISOString().split("T")[0]; }
+    const url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=" + fmt(ws) + "&endDate=" + fmt(we) + "&gameType=R&fields=dates,games,teams,away,home,team,name,score,status,abstractGameState,detailedState";
+    const res = await fetch(url);
+    const json = await res.json();
+    const totals = {};
+    const dates = json.dates || [];
+    for (let i = 0; i < dates.length; i++) {
+      const games = dates[i].games || [];
+      for (let j = 0; j < games.length; j++) {
+        const g = games[j];
+        const detail = (g.status && g.status.detailedState && g.status.detailedState.toLowerCase()) || "";
+        const isFinal = g.status && g.status.abstractGameState === "Final";
+        const isSuspended = detail.indexOf("suspended") >= 0 || detail.indexOf("resume") >= 0;
+        if (!isFinal && !isSuspended) continue;
+        const aw = g.teams && g.teams.away;
+        const hm = g.teams && g.teams.home;
+        if (aw && aw.team && aw.team.name) totals[aw.team.name] = (totals[aw.team.name]||0) + (aw.score||0);
+        if (hm && hm.team && hm.team.name) totals[hm.team.name] = (totals[hm.team.name]||0) + (hm.score||0);
+      }
+    }
+    return totals;
+  } catch(e) { return {}; }
+}
+
 // Standings
 function renderStandings() {
   const w = currentWeek();
@@ -762,12 +797,37 @@ function renderStandings() {
     '<div style="display:flex;gap:8px;margin-bottom:20px">' +
     '<button class="tab-btn active" id="stab-week" onclick="standTab(\'week\')">This Week</button>' +
     '<button class="tab-btn" id="stab-season" onclick="standTab(\'season\')">Full Season</button></div>' +
-    '<div id="stand-week">' + renderWeekStandings(w) + '</div>' +
+    '<div id="stand-week"><div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Fetching live runs...</div></div>' +
     '<div id="stand-season" style="display:none">' + renderSeasonStandings() + '</div>';
 }
 
-function renderWeekStandings(w) {
-  const rows = calcWeekStandings(w);
+async function loadStandingsWeek(w) {
+  const el = document.getElementById("stand-week");
+  if (!el) return;
+  el.innerHTML = '<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Fetching live runs...</div>';
+  // Fetch live runs and merge with any admin-saved runs (admin saved takes priority)
+  const live = await fetchLiveRunsForWeek(w);
+  _liveRuns[w] = live;
+  el.innerHTML = renderWeekStandings(w, live);
+}
+
+function renderWeekStandings(w, liveRuns) {
+  liveRuns = liveRuns || _liveRuns[w] || {};
+  const picks = (state.data.weeks && state.data.weeks[w] && state.data.weeks[w].picks) || {};
+  const savedRuns = (state.data.weeks && state.data.weeks[w] && state.data.weeks[w].runs) || {};
+  // Merge: saved runs take priority, live fills in the rest
+  const mergedRuns = Object.assign({}, liveRuns, savedRuns);
+  const rows = (state.data.players || []).map(function(p) {
+    const team = picks[p.name] || null;
+    const runs = team != null ? (mergedRuns[team] != null ? mergedRuns[team] : null) : null;
+    return { name: p.name, team: team, runs: runs, payout: 0 };
+  });
+  rows.sort(function(a,b) { return (b.runs != null ? b.runs : -1) - (a.runs != null ? a.runs : -1); });
+  const withRuns = rows.filter(function(r) { return r.runs !== null; });
+  if (withRuns.length > 0) {
+    const winner = withRuns[0];
+    winner.payout = withRuns.slice(1).reduce(function(s,r) { return s + (winner.runs - r.runs); }, 0) * 2;
+  }
   const trs = rows.map(function(r,i) {
     return '<tr style="' + (i===0&&r.runs!==null?"background:#16a34a18":"") + '">' +
       '<td style="font-weight:800;color:' + (i===0?"#fbbf24":"#94a3b8") + '">' + (i===0?"#1":i+1) + '</td>' +
@@ -779,7 +839,8 @@ function renderWeekStandings(w) {
   return '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
     '<input type="number" id="week-stand" value="' + w + '" min="1" max="' + (state.data.weekCount||26) + '" style="width:60px"/>' +
-    '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="reloadWeekStand()">Load</button></div>' +
+    '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="reloadWeekStand()">Load</button>' +
+    '<span style="color:#94a3b8;font-size:12px;margin-left:8px">Live runs auto-fetched</span></div>' +
     '<div class="card" style="padding:0;overflow:hidden"><table>' +
     '<thead><tr><th>Rank</th><th>Player</th><th>Team</th><th style="text-align:right">Runs</th><th style="text-align:right">Winnings</th></tr></thead>' +
     '<tbody>' + trs + '</tbody></table></div>';
@@ -805,9 +866,13 @@ window.standTab = function(t) {
   document.getElementById("stand-season").style.display = t==="season" ? "block" : "none";
   document.getElementById("stab-week").classList.toggle("active", t==="week");
   document.getElementById("stab-season").classList.toggle("active", t==="season");
+  if (t==="season") {
+    document.getElementById("stand-season").innerHTML = renderSeasonStandings();
+  }
 };
 window.reloadWeekStand = function() {
-  document.getElementById("stand-week").innerHTML = renderWeekStandings(Number(document.getElementById("week-stand").value));
+  const w = Number(document.getElementById("week-stand").value);
+  loadStandingsWeek(w);
 };
 
 // Boot
@@ -816,3 +881,5 @@ onSnapshot(POOL_DOC, function(snap) {
   render();
 });
 </script>
+</body>
+</html>
