@@ -22,35 +22,25 @@ td{padding:10px;border-top:1px solid #0f172a;font-size:13px}
 tr:nth-child(even) td{background:#1a2744}
 .spinner{display:inline-block;width:18px;height:18px;border:3px solid #334155;border-top-color:#38bdf8;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px}
+.admin-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.admin-tabs::-webkit-scrollbar{display:none}
 
 /* Nav */
-nav{background:#1e293b;border-bottom:2px solid #2563eb;padding:0;position:sticky;top:0;z-index:100}
-.nav-top{display:flex;align-items:center;padding:10px 14px;gap:8px}
+nav{background:#1e293b;border-bottom:2px solid #2563eb;position:sticky;top:0;z-index:100}
 .nav-title{font-weight:800;font-size:18px;color:#38bdf8}
-.nav-hamburger{background:none;border:1px solid #334155;color:#f1f5f9;padding:6px 10px;border-radius:6px;font-size:18px;line-height:1;display:none}
-
-/* Desktop nav — horizontal buttons */
-.nav-desktop{display:flex;align-items:center;gap:8px;padding:0 14px 10px;flex-wrap:wrap}
+.nav-desktop{display:flex;align-items:center;gap:8px;padding:10px 16px;flex-wrap:wrap}
 .nav-btn{padding:8px 14px;border-radius:6px;background:#1e293b;color:#f1f5f9;font-size:13px;font-weight:700;border:1px solid #334155}
 .nav-btn.active{background:#2563eb;border-color:#2563eb}
-.logout-btn{margin-left:auto;background:#dc2626;color:#fff;padding:8px 14px;border-radius:6px;font-size:13px;font-weight:700;border:none}
-
-/* Mobile nav — hamburger dropdown */
+.logout-btn{margin-left:auto;background:#dc2626;color:#fff;padding:8px 14px;border-radius:6px;font-size:13px;font-weight:700;border:none;cursor:pointer}
+.nav-top{display:none;align-items:center;padding:10px 14px;gap:8px}
+.nav-hamburger{background:none;border:1px solid #334155;color:#f1f5f9;padding:6px 10px;border-radius:6px;font-size:18px;line-height:1;cursor:pointer}
 .nav-links{display:none;flex-direction:column;padding:8px 14px 12px;gap:6px;border-top:1px solid #1e3a5f}
 .nav-links.open{display:flex}
 .nav-links .nav-btn{width:100%;text-align:left;padding:10px 14px}
 .nav-links .logout-btn{width:100%;text-align:left;padding:10px 14px;margin-left:0}
 
-/* Switch to hamburger on small screens */
-@media(max-width:640px){
-  .nav-hamburger{display:block}
-  .nav-desktop{display:none}
-}
-
-/* App container */
 #app{max-width:1020px;margin:0 auto;padding:12px}
-
-/* Team grid - 2 columns on mobile */
 .team-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 @media(min-width:500px){.team-grid{grid-template-columns:repeat(auto-fill,minmax(195px,1fr))}}
 .team-btn{padding:10px 12px;border-radius:8px;text-align:left;font-size:13px;font-weight:600;background:#0f172a;color:#f1f5f9;border-left:3px solid #2563eb;width:100%}
@@ -58,22 +48,14 @@ nav{background:#1e293b;border-bottom:2px solid #2563eb;padding:0;position:sticky
 .team-btn.used{background:#1e1e2e;color:#475569;border-left-color:#7c3aed}
 .team-btn:disabled{cursor:not-allowed}
 
-/* Responsive tables */
-.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px}
+.hide-mobile{display:inline}
+.show-mobile{display:none}
 
-/* Admin tabs scroll horizontally on mobile */
-.admin-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-.admin-tabs::-webkit-scrollbar{display:none}
-
-/* Stack flex rows on mobile */
-.flex-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-
-/* Responsive helpers */
-.hide-mobile { display:inline; }
-.show-mobile { display:none; }
-@media(max-width:640px){
-  .hide-mobile { display:none; }
-  .show-mobile { display:inline; }
+@media(max-width:900px){
+  .nav-desktop{display:none}
+  .nav-top{display:flex}
+  .hide-mobile{display:none}
+  .show-mobile{display:inline}
   .card{padding:14px}
   td{padding:8px 6px;font-size:12px}
   th{padding:8px 6px;font-size:11px}
@@ -114,20 +96,29 @@ var MLB_TEAMS = [
   "Seattle Mariners","St. Louis Cardinals","Tampa Bay Rays","Texas Rangers",
   "Toronto Blue Jays","Washington Nationals"
 ];
+var ABBREV = {
+  "Arizona Diamondbacks":"ARI","Atlanta Braves":"ATL","Baltimore Orioles":"BAL",
+  "Boston Red Sox":"BOS","Chicago Cubs":"CHC","Chicago White Sox":"CWS",
+  "Cincinnati Reds":"CIN","Cleveland Guardians":"CLE","Colorado Rockies":"COL",
+  "Detroit Tigers":"DET","Houston Astros":"HOU","Kansas City Royals":"KC",
+  "Los Angeles Angels":"LAA","Los Angeles Dodgers":"LAD","Miami Marlins":"MIA",
+  "Milwaukee Brewers":"MIL","Minnesota Twins":"MIN","New York Mets":"NYM",
+  "New York Yankees":"NYY","Oakland Athletics":"OAK","Philadelphia Phillies":"PHI",
+  "Pittsburgh Pirates":"PIT","San Diego Padres":"SD","San Francisco Giants":"SF",
+  "Seattle Mariners":"SEA","St. Louis Cardinals":"STL","Tampa Bay Rays":"TB",
+  "Texas Rangers":"TEX","Toronto Blue Jays":"TOR","Washington Nationals":"WSH"
+};
 var ROTATION = [0,5,4,2,7,1,3,6];
 var appState = { data: null, user: null, view: "home" };
 var scheduleCache = {};
 var liveRunsCache = {};
 var orderState = [];
+var _researchSort = "games";
+var _researchDir = "desc";
 
-function defaultData() {
-  return { seasonStart:"", weekCount:26, players:[], weeks:{} };
-}
+function defaultData() { return { seasonStart:"", weekCount:26, players:[], weeks:{} }; }
 
-async function saveData(d) {
-  appState.data = d;
-  await setDoc(POOL_DOC, d);
-}
+async function saveData(d) { appState.data = d; await setDoc(POOL_DOC, d); }
 
 function flash(msg, color) {
   if (!color) color = "#16a34a";
@@ -185,29 +176,17 @@ function takenTeamsThisWeek(weekNum) {
   return taken;
 }
 
-function isMyTurn(weekNum, playerName) {
-  var picks = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].picks) || {};
-  var ordered = orderedPlayers(weekNum);
-  for (var i = 0; i < ordered.length; i++) {
-    if (!picks[ordered[i].name]) return ordered[i].name === playerName;
-  }
-  return false;
-}
-
-// SCHEDULE / TIMING
+// TIMING
 function getWeekWindow(weekNum) {
   if (!appState.data.seasonStart) return null;
   var start = new Date(appState.data.seasonStart);
   var weekMonday = new Date(start);
   weekMonday.setDate(start.getDate() + (weekNum - 1) * 7);
-  var friday = new Date(weekMonday);
-  friday.setDate(weekMonday.getDate() - 3);
-  // Draft opens Friday midnight ET, slots start Sunday 2pm ET, closes Sunday 10pm ET
-  var sunday = new Date(weekMonday);
-  sunday.setDate(weekMonday.getDate() - 1);
-  var openET    = new Date(friday.toISOString().split("T")[0] + "T00:00:00-05:00");
+  var friday = new Date(weekMonday); friday.setDate(weekMonday.getDate() - 3);
+  var sunday = new Date(weekMonday); sunday.setDate(weekMonday.getDate() - 1);
+  var openET     = new Date(friday.toISOString().split("T")[0] + "T00:00:00-05:00");
   var mondayBase = new Date(sunday.toISOString().split("T")[0] + "T14:00:00-05:00");
-  var closeET   = new Date(sunday.toISOString().split("T")[0] + "T22:00:00-05:00");
+  var closeET    = new Date(sunday.toISOString().split("T")[0] + "T22:00:00-05:00");
   return { openET: openET, mondayBase: mondayBase, closeET: closeET };
 }
 
@@ -242,9 +221,7 @@ function canPlayerPick(weekNum, playerName) {
   if (picks[playerName]) return { can: false, reason: "You have already picked this week." };
   var ordered = orderedPlayers(weekNum);
   var slotIndex = -1;
-  for (var i = 0; i < ordered.length; i++) {
-    if (ordered[i].name === playerName) { slotIndex = i; break; }
-  }
+  for (var i = 0; i < ordered.length; i++) { if (ordered[i].name === playerName) { slotIndex = i; break; } }
   if (slotIndex < 0) return { can: false, reason: "Player not found." };
   var myDeadline = getPickDeadline(weekNum, slotIndex);
   if (now >= myDeadline) return { can: false, reason: "Your pick window has closed. A default pick has been assigned." };
@@ -252,8 +229,7 @@ function canPlayerPick(weekNum, playerName) {
   if (mondayStarted) {
     for (var j = 0; j < slotIndex; j++) {
       var prevDeadline = getPickDeadline(weekNum, j);
-      var prevPicked = !!picks[ordered[j].name];
-      if (!prevPicked && now < prevDeadline) {
+      if (!picks[ordered[j].name] && now < prevDeadline) {
         return { can: false, reason: "Waiting for " + ordered[j].name + " to pick (deadline: " + formatET(prevDeadline) + " ET)." };
       }
     }
@@ -273,22 +249,19 @@ async function processAutoPicks(weekNum) {
     if (picks[p.name]) continue;
     var deadline = getPickDeadline(weekNum, i);
     if (now < deadline) continue;
-    var taken = [];
-    for (var pl in picks) taken.push(picks[pl]);
+    var taken = []; for (var pl in picks) taken.push(picks[pl]);
     var used = usedTeams(p.name);
     var defaultTeam = null;
     for (var t = 0; t < MLB_TEAMS.length; t++) {
       var team = MLB_TEAMS[t];
-      if (taken.indexOf(team) >= 0) continue;
-      if (used.indexOf(team) >= 0) continue;
+      if (taken.indexOf(team) >= 0 || used.indexOf(team) >= 0) continue;
       var games = gameCounts[team] !== undefined ? parseFloat(gameCounts[team]) : 0;
       if (games >= 6) { defaultTeam = team; break; }
     }
     if (!defaultTeam) {
       for (var t2 = 0; t2 < MLB_TEAMS.length; t2++) {
         var team2 = MLB_TEAMS[t2];
-        if (taken.indexOf(team2) >= 0) continue;
-        if (used.indexOf(team2) >= 0) continue;
+        if (taken.indexOf(team2) >= 0 || used.indexOf(team2) >= 0) continue;
         defaultTeam = team2; break;
       }
     }
@@ -306,7 +279,7 @@ function formatET(date) {
   return date.toLocaleString("en-US", { timeZone:"America/New_York", weekday:"short", month:"short", day:"numeric", hour:"numeric", minute:"2-digit", hour12:true });
 }
 
-// PAYOUT CALCULATION
+// PAYOUT
 function calcWeekStandings(weekNum, overrideRuns) {
   var picks = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].picks) || {};
   var savedRuns = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].runs) || {};
@@ -317,27 +290,18 @@ function calcWeekStandings(weekNum, overrideRuns) {
     var p = players[i];
     var team = picks[p.name] || null;
     var playerRuns = null;
-    if (team !== null) {
-      playerRuns = (runs[team] !== undefined && runs[team] !== null) ? runs[team] : 0;
-    }
+    if (team !== null) playerRuns = (runs[team] !== undefined && runs[team] !== null) ? runs[team] : 0;
     rows.push({ name: p.name, team: team, runs: playerRuns, payout: null });
   }
-  rows.sort(function(a, b) {
-    var ar = (a.runs !== null) ? a.runs : -9999;
-    var br = (b.runs !== null) ? b.runs : -9999;
-    return br - ar;
-  });
-  var playersWithPicks = [];
-  for (var j = 0; j < rows.length; j++) {
-    if (rows[j].runs !== null) playersWithPicks.push(rows[j]);
-  }
-  if (playersWithPicks.length > 0) {
-    var winner = playersWithPicks[0];
+  rows.sort(function(a,b) { return ((a.runs!==null)?a.runs:-9999) > ((b.runs!==null)?b.runs:-9999) ? -1 : 1; });
+  var withPicks = rows.filter(function(r) { return r.runs !== null; });
+  if (withPicks.length > 0) {
+    var winner = withPicks[0];
     var winnerPayout = 0;
-    for (var k = 1; k < playersWithPicks.length; k++) {
-      var diff = winner.runs - playersWithPicks[k].runs;
+    for (var k = 1; k < withPicks.length; k++) {
+      var diff = winner.runs - withPicks[k].runs;
       winnerPayout += diff * 2;
-      playersWithPicks[k].payout = -(diff * 2);
+      withPicks[k].payout = -(diff * 2);
     }
     winner.payout = winnerPayout;
   }
@@ -347,275 +311,23 @@ function calcWeekStandings(weekNum, overrideRuns) {
 function calcSeasonStandings() {
   var totals = {};
   var players = appState.data.players || [];
-  for (var i = 0; i < players.length; i++) {
-    totals[players[i].name] = { name: players[i].name, totalRuns: 0, totalWinnings: 0, weeks: 0 };
-  }
-  for (var w = 1; w <= (appState.data.weekCount || 26); w++) {
+  for (var i = 0; i < players.length; i++) totals[players[i].name] = { name: players[i].name, totalRuns: 0, totalWinnings: 0, weeks: 0 };
+  for (var w = 1; w <= (appState.data.weekCount||26); w++) {
     var ws = calcWeekStandings(w);
-    var hasData = false;
-    for (var j = 0; j < ws.length; j++) { if (ws[j].runs !== null) { hasData = true; break; } }
+    var hasData = ws.some(function(r) { return r.runs !== null; });
     if (!hasData) continue;
-    for (var k = 0; k < ws.length; k++) {
-      var r = ws[k];
-      if (!totals[r.name]) continue;
+    ws.forEach(function(r) {
+      if (!totals[r.name]) return;
       if (r.runs !== null) { totals[r.name].totalRuns += r.runs; totals[r.name].weeks++; }
       if (r.payout !== null) totals[r.name].totalWinnings += r.payout;
-    }
+    });
   }
-  var result = [];
-  for (var name in totals) result.push(totals[name]);
+  var result = Object.values(totals);
   result.sort(function(a,b) { return b.totalWinnings - a.totalWinnings || b.totalRuns - a.totalRuns; });
   return result;
 }
 
-// NAV
-function renderNav() {
-  var user = appState.user, view = appState.view;
-  function nb(v, label) {
-    return '<button class="nav-btn' + (view===v?' active':'') + '" onclick="setView(\'' + v + '\');document.getElementById(\'nav-links\').classList.remove(\'open\')">' + label + '</button>';
-  }
-  var navItems =
-    nb("home","Home") + nb("draft","Draft Board") + nb("standings","Standings") + nb("research","Research") +
-    (user && user.isAdmin ? nb("admin","Admin") : "") +
-    (user && !user.isAdmin ? nb("player","My Picks") : "") +
-    (user ? '<button class="logout-btn" onclick="doLogout()">Logout (' + user.name + ')</button>' : "");
-
-  document.getElementById("nav").innerHTML =
-    // Desktop nav
-    '<div class="nav-desktop"><span class="nav-title" style="margin-right:6px">Baseball Run Pool</span>' + navItems + '</div>' +
-    // Mobile nav
-    '<div class="nav-top">' +
-    '<span class="nav-title">Baseball Run Pool</span>' +
-    (user ? '<span style="color:#94a3b8;font-size:12px;margin-right:4px">' + user.name + '</span>' : '') +
-    '<button class="nav-hamburger" onclick="document.getElementById(\'nav-links\').classList.toggle(\'open\')">&#9776;</button></div>' +
-    '<div class="nav-links" id="nav-links">' + navItems + '</div>';
-}
-
-window.setView = function(v) { appState.view = v; render(); };
-window.doLogout = function() { appState.user = null; appState.view = "home"; render(); };
-
-function render() {
-  renderNav();
-  var app = document.getElementById("app");
-  if (!appState.data) { app.innerHTML = '<div style="padding:60px;text-align:center;color:#94a3b8"><span class="spinner"></span> Loading...</div>'; return; }
-  if (appState.view === "home")      app.innerHTML = renderHome();
-  if (appState.view === "admin")     app.innerHTML = renderAdmin();
-  if (appState.view === "player")    app.innerHTML = renderPlayer();
-  if (appState.view === "standings") { app.innerHTML = renderStandingsShell(); loadStandingsWeek(currentWeek()); }
-  if (appState.view === "research")  { app.innerHTML = renderResearchShell(); loadResearchTable(currentWeek()); }
-  if (appState.view === "draft")     { app.innerHTML = renderDraftShell(); loadDraftTable(currentWeek()); }
-}
-
-// HOME
-function renderHome() {
-  var w = currentWeek();
-  var info = appState.data.seasonStart
-    ? '<p style="color:#94a3b8;margin-top:6px">Season started: ' + appState.data.seasonStart + ' | Current Week: <strong style="color:#38bdf8">' + w + '</strong></p>'
-    : '<p style="color:#f59e0b;margin-top:6px">Season not configured. Admin must set up the pool first.</p>';
-  var opts = "";
-  var players = appState.data.players || [];
-  for (var i = 0; i < players.length; i++) opts += '<option value="' + players[i].name + '">' + players[i].name + '</option>';
-  return '<div style="text-align:center;margin-bottom:28px;padding-top:20px">' +
-    '<div style="font-size:32px;font-weight:800;color:#38bdf8">Baseball Run Pool</div>' + info + '</div>' +
-    '<div style="max-width:400px;margin:0 auto" class="card">' +
-    '<div style="display:flex;gap:8px;margin-bottom:20px">' +
-    '<button class="tab-btn active" id="tab-player" onclick="homeTab(\'player\')" style="flex:1">Player Login</button>' +
-    '<button class="tab-btn" id="tab-admin" onclick="homeTab(\'admin\')" style="flex:1">Admin Login</button></div>' +
-    '<div id="home-player-panel">' +
-    (!opts ? '<p style="color:#94a3b8;text-align:center">No players set up yet.</p>' :
-      '<select id="player-select" style="margin-bottom:12px"><option value="">Select your name...</option>' + opts + '</select>' +
-      '<button style="width:100%;padding:11px;background:#2563eb;color:#fff;font-size:16px" onclick="loginPlayer()">Enter Pool</button>') + '</div>' +
-    '<div id="home-admin-panel" style="display:none">' +
-    '<input type="password" id="admin-pw" placeholder="Commissioner password" style="margin-bottom:8px" onkeydown="if(event.key===\'Enter\')loginAdmin()"/>' +
-    '<div id="pw-error" style="color:#ef4444;font-size:13px;margin-bottom:8px"></div>' +
-    '<button style="width:100%;padding:11px;background:#7c3aed;color:#fff;font-size:16px" onclick="loginAdmin()">Login as Admin</button></div></div>';
-}
-window.homeTab = function(t) {
-  document.getElementById("home-player-panel").style.display = t==="player"?"block":"none";
-  document.getElementById("home-admin-panel").style.display  = t==="admin"?"block":"none";
-  document.getElementById("tab-player").classList.toggle("active",t==="player");
-  document.getElementById("tab-admin").classList.toggle("active",t==="admin");
-};
-window.loginPlayer = function() {
-  var el = document.getElementById("player-select"); if (!el || !el.value) return;
-  appState.user = { name: el.value, isAdmin: false }; appState.view = "player"; render();
-};
-window.loginAdmin = function() {
-  var el = document.getElementById("admin-pw");
-  if (el && el.value === ADMIN_PW) { appState.user = { name:"Commissioner", isAdmin:true }; appState.view="admin"; render(); }
-  else document.getElementById("pw-error").textContent = "Incorrect password.";
-};
-
-// ADMIN
-function renderAdmin() {
-  var tabLabels = { setup:"Season Setup", players:"Players & Draft Order", runs:"Enter Runs", manage:"Week Management", picks:"Enter Pick", reset:"Reset Pool" };
-  var tabKeys = ["setup","players","runs","manage","picks","reset"];
-  var btns = "";
-  for (var i = 0; i < tabKeys.length; i++) {
-    btns += '<button class="tab-btn' + (i===0?' active':'') + '" id="atab-' + tabKeys[i] + '" onclick="adminTab(\'' + tabKeys[i] + '\')">' + tabLabels[tabKeys[i]] + '</button>';
-  }
-  return '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin-bottom:16px">Commissioner Panel</h2>' +
-    '<div class="admin-tabs" style="margin-bottom:20px">' + btns + '</div>' +
-    '<div id="admin-panel">' + renderAdminSetup() + '</div>';
-}
-window.adminTab = function(t) {
-  var keys = ["setup","players","runs","manage","picks","reset"];
-  for (var i = 0; i < keys.length; i++) {
-    var el = document.getElementById("atab-" + keys[i]);
-    if (el) el.classList.toggle("active", keys[i]===t);
-  }
-  var panel = document.getElementById("admin-panel");
-  if (t==="setup")   panel.innerHTML = renderAdminSetup();
-  if (t==="players") panel.innerHTML = renderAdminPlayers();
-  if (t==="runs")    panel.innerHTML = renderAdminRuns(currentWeek());
-  if (t==="manage")  panel.innerHTML = renderAdminManage(currentWeek());
-  if (t==="picks")   panel.innerHTML = renderAdminPicks(currentWeek());
-  if (t==="reset")   panel.innerHTML = renderAdminReset();
-};
-
-function renderAdminSetup() {
-  return '<div class="card" style="max-width:400px">' +
-    '<h3 style="font-weight:700;margin-bottom:16px">Season Settings</h3>' +
-    '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Season Start Date</label>' +
-    '<input type="date" id="season-start" value="' + (appState.data.seasonStart||'') + '" style="margin-bottom:14px"/>' +
-    '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Number of Weeks</label>' +
-    '<input type="number" id="week-count" value="' + (appState.data.weekCount||26) + '" min="1" max="30" style="margin-bottom:16px"/>' +
-    '<button style="padding:10px 24px;background:#2563eb;color:#fff" onclick="saveSetup()">Save Settings</button></div>';
-}
-window.saveSetup = async function() {
-  var start = document.getElementById("season-start").value;
-  var wc = Number(document.getElementById("week-count").value);
-  var d = JSON.parse(JSON.stringify(appState.data));
-  d.seasonStart = start; d.weekCount = wc;
-  await saveData(d); flash("Season settings saved!");
-};
-
-function renderAdminPlayers() {
-  var players = (appState.data.players && appState.data.players.length) ? appState.data.players : [];
-  while (players.length < 8) players.push({ name:"", draftOrder:{} });
-  var inputs = "";
-  for (var i = 0; i < players.length; i++) {
-    inputs += '<input id="pname-' + i + '" value="' + (players[i].name||"") + '" placeholder="Player ' + (i+1) + '" style="margin-bottom:10px"/>';
-  }
-  return '<div style="display:flex;gap:20px;flex-wrap:wrap">' +
-    '<div class="card" style="flex:1 1 260px"><h3 style="font-weight:700;margin-bottom:14px">Player Names</h3>' + inputs +
-    '<button style="padding:10px 24px;background:#2563eb;color:#fff;margin-top:4px" onclick="savePlayers()">Save Players</button></div>' +
-    '<div class="card" style="flex:1 1 260px"><h3 style="font-weight:700;margin-bottom:12px">Draft Order by Week</h3>' +
-    '<p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Auto-rotation default: 1-6-5-3-8-2-4-7. Override a specific week below.</p>' +
-    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
-    '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="order-week" value="1" min="1" max="' + (appState.data.weekCount||26) + '" style="width:60px"/>' +
-    '<button style="padding:6px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadOrderEditor()">Edit</button></div>' +
-    '<div id="order-editor"></div></div></div>';
-}
-window.savePlayers = async function() {
-  var existing = (appState.data.players && appState.data.players.length) ? appState.data.players : [];
-  while (existing.length < 8) existing.push({ name:"", draftOrder:{} });
-  var updated = [];
-  for (var i = 0; i < existing.length; i++) {
-    var el = document.getElementById("pname-" + i);
-    var name = el ? el.value.trim() : "";
-    if (name) updated.push({ name: name, draftOrder: existing[i].draftOrder || {} });
-  }
-  if (updated.length < 2) { flash("Need at least 2 players.", "#dc2626"); return; }
-  var d = JSON.parse(JSON.stringify(appState.data)); d.players = updated;
-  await saveData(d); flash("Players saved!");
-};
-window.loadOrderEditor = function() { renderOrderEditor(Number(document.getElementById("order-week").value)); };
-function renderOrderEditor(weekNum) {
-  var players = appState.data.players || [];
-  if (!players.length) { document.getElementById("order-editor").innerHTML = '<p style="color:#94a3b8">Save players first.</p>'; return; }
-  orderState = players.slice().sort(function(a,b) {
-    var as = (a.draftOrder && a.draftOrder[weekNum] !== undefined) ? a.draftOrder[weekNum] : 99;
-    var bs = (b.draftOrder && b.draftOrder[weekNum] !== undefined) ? b.draftOrder[weekNum] : 99;
-    return as - bs;
-  });
-  var rows = "";
-  for (var i = 0; i < orderState.length; i++) {
-    rows += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;background:#0f172a;border-radius:8px;padding:8px 12px">' +
-      '<span style="color:#38bdf8;width:24px;font-weight:800">#' + (i+1) + '</span>' +
-      '<span style="flex:1;font-weight:600">' + orderState[i].name + '</span>' +
-      '<button style="padding:2px 9px;background:#334155;color:#f1f5f9;border-radius:4px" onclick="orderMove(' + weekNum + ',' + i + ',-1)">Up</button>' +
-      '<button style="padding:2px 9px;background:#334155;color:#f1f5f9;border-radius:4px" onclick="orderMove(' + weekNum + ',' + i + ',1)">Dn</button></div>';
-  }
-  document.getElementById("order-editor").innerHTML =
-    '<div style="color:#38bdf8;font-weight:700;margin-bottom:10px">Week ' + weekNum + ' Pick Order</div>' + rows +
-    '<button style="margin-top:8px;padding:8px 18px;background:#16a34a;color:#fff" onclick="saveOrder(' + weekNum + ')">Save Order</button>';
-}
-window.orderMove = function(weekNum, idx, dir) {
-  var ni = idx + dir;
-  if (ni < 0 || ni >= orderState.length) return;
-  var tmp = orderState[idx]; orderState[idx] = orderState[ni]; orderState[ni] = tmp;
-  for (var i = 0; i < orderState.length; i++) { orderState[i].draftOrder = orderState[i].draftOrder || {}; orderState[i].draftOrder[weekNum] = i; }
-  renderOrderEditor(weekNum);
-};
-window.saveOrder = async function(weekNum) {
-  var d = JSON.parse(JSON.stringify(appState.data));
-  for (var i = 0; i < d.players.length; i++) {
-    for (var j = 0; j < orderState.length; j++) {
-      if (orderState[j].name === d.players[i].name) {
-        d.players[i].draftOrder = d.players[i].draftOrder || {};
-        d.players[i].draftOrder[weekNum] = orderState[j].draftOrder[weekNum];
-        break;
-      }
-    }
-  }
-  await saveData(d); flash("Week " + weekNum + " order saved!");
-};
-
-function renderAdminRuns(w) {
-  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
-  var runs  = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].runs)  || {};
-  var entries = Object.keys(picks);
-  var rows = "";
-  for (var i = 0; i < entries.length; i++) {
-    var player = entries[i], team = picks[player];
-    rows += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;background:#0f172a;border-radius:8px;padding:10px 14px">' +
-      '<div style="flex:1"><div style="font-weight:600">' + player + '</div><div style="color:#94a3b8;font-size:13px">' + team + '</div></div>' +
-      '<input type="number" id="run-' + team.replace(/ /g,'_') + '" value="' + (runs[team]!==undefined?runs[team]:'') + '" min="0" placeholder="Runs" style="width:75px;text-align:center"/></div>';
-  }
-  return '<div class="card" style="max-width:520px">' +
-    '<h3 style="font-weight:700;margin-bottom:14px">Enter / Override Runs</h3>' +
-    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:18px;flex-wrap:wrap">' +
-    '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="runs-week" value="' + w + '" min="1" max="' + (appState.data.weekCount||26) + '" style="width:60px"/>' +
-    '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="changeRunsWeek()">Load</button>' +
-    '<button id="fetch-btn" style="padding:7px 14px;background:#0891b2;color:#fff;font-size:13px" onclick="fetchLiveRunsAdmin()">Fetch Live</button></div>' +
-    '<div id="runs-rows">' + (entries.length===0?'<p style="color:#94a3b8">No picks for this week yet.</p>':rows) + '</div>' +
-    (entries.length>0?'<button style="margin-top:8px;padding:10px 24px;background:#2563eb;color:#fff" onclick="saveRuns(' + w + ')">Save Runs</button>':'') + '</div>';
-}
-window.changeRunsWeek = function() { document.getElementById("admin-panel").innerHTML = renderAdminRuns(Number(document.getElementById("runs-week").value)); };
-window.saveRuns = async function(w) {
-  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
-  var runs = {};
-  var teams = Object.values(picks);
-  for (var i = 0; i < teams.length; i++) {
-    var el = document.getElementById("run-" + teams[i].replace(/ /g,'_'));
-    if (el && el.value !== "") runs[teams[i]] = Number(el.value);
-  }
-  var d = JSON.parse(JSON.stringify(appState.data));
-  d.weeks = d.weeks || {}; d.weeks[w] = d.weeks[w] || {};
-  d.weeks[w].runs = runs;
-  await saveData(d); flash("Runs saved for Week " + w + "!");
-};
-window.fetchLiveRunsAdmin = async function() {
-  var w = Number(document.getElementById("runs-week").value);
-  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
-  var teams = Object.values(picks);
-  if (!teams.length) { flash("No picks for this week.", "#b45309"); return; }
-  if (!appState.data.seasonStart) { flash("Set season start date first.", "#b45309"); return; }
-  var btn = document.getElementById("fetch-btn");
-  btn.innerHTML = '<span class="spinner"></span>Fetching...'; btn.disabled = true;
-  var totals = await fetchRunsFromAPI(w);
-  var found = 0;
-  for (var i = 0; i < teams.length; i++) {
-    var el = document.getElementById("run-" + teams[i].replace(/ /g,'_'));
-    if (el && totals[teams[i]] !== undefined) { el.value = totals[teams[i]]; found++; }
-  }
-  flash(found ? "Fetched runs for " + found + "/" + teams.length + " teams!" : "No final game data found yet.", "#0891b2");
-  btn.innerHTML = "Fetch Live"; btn.disabled = false;
-};
-
+// API
 async function fetchRunsFromAPI(w) {
   if (!appState.data.seasonStart) return {};
   try {
@@ -676,98 +388,304 @@ async function fetchScheduleFromAPI(w) {
   } catch(e) { return {}; }
 }
 
+// NAV
+function renderNav() {
+  var user = appState.user, view = appState.view;
+  function nb(v, label) {
+    return '<button class="nav-btn' + (view===v?' active':'') + '" onclick="setView(\'' + v + '\');document.getElementById(\'nav-links\').classList.remove(\'open\')">' + label + '</button>';
+  }
+  var navItems = nb("home","Home") + nb("draft","Draft Board") + nb("standings","Standings") + nb("research","Research") +
+    (user && user.isAdmin ? nb("admin","Admin") : "") +
+    (user && !user.isAdmin ? nb("player","My Picks") : "") +
+    (user ? '<button class="logout-btn" onclick="doLogout()">Logout (' + user.name + ')</button>' : "");
+  document.getElementById("nav").innerHTML =
+    '<div class="nav-desktop"><span class="nav-title" style="margin-right:8px">Baseball Run Pool</span>' + navItems + '</div>' +
+    '<div class="nav-top"><span class="nav-title" style="flex:1">Baseball Run Pool</span>' +
+    (user ? '<span style="color:#94a3b8;font-size:12px;margin-right:4px">' + user.name + '</span>' : '') +
+    '<button class="nav-hamburger" onclick="document.getElementById(\'nav-links\').classList.toggle(\'open\')">&#9776;</button></div>' +
+    '<div class="nav-links" id="nav-links">' + navItems + '</div>';
+}
+
+window.setView = function(v) { appState.view = v; render(); };
+window.doLogout = function() { appState.user = null; appState.view = "home"; render(); };
+
+function render() {
+  renderNav();
+  var app = document.getElementById("app");
+  if (!appState.data) { app.innerHTML = '<div style="padding:60px;text-align:center;color:#94a3b8"><span class="spinner"></span> Loading...</div>'; return; }
+  if (appState.view === "home")      app.innerHTML = renderHome();
+  if (appState.view === "admin")     app.innerHTML = renderAdmin();
+  if (appState.view === "player")    app.innerHTML = renderPlayer();
+  if (appState.view === "standings") { app.innerHTML = renderStandingsShell(); loadStandingsWeek(currentWeek()); }
+  if (appState.view === "research")  { app.innerHTML = renderResearchShell(); loadResearchTable(currentWeek(), "games", "desc"); }
+  if (appState.view === "draft")     { app.innerHTML = renderDraftShell(); loadDraftTable(currentWeek()); }
+}
+
+// HOME
+function renderHome() {
+  var w = currentWeek();
+  var info = appState.data.seasonStart
+    ? '<p style="color:#94a3b8;margin-top:6px">Season started: ' + appState.data.seasonStart + ' | Current Week: <strong style="color:#38bdf8">' + w + '</strong></p>'
+    : '<p style="color:#f59e0b;margin-top:6px">Season not configured. Admin must set up the pool first.</p>';
+  var opts = (appState.data.players||[]).map(function(p) { return '<option value="' + p.name + '">' + p.name + '</option>'; }).join("");
+  return '<div style="text-align:center;margin-bottom:28px;padding-top:20px">' +
+    '<div style="font-size:32px;font-weight:800;color:#38bdf8">Baseball Run Pool</div>' + info + '</div>' +
+    '<div style="max-width:400px;margin:0 auto" class="card">' +
+    '<div style="display:flex;gap:8px;margin-bottom:20px">' +
+    '<button class="tab-btn active" id="tab-player" onclick="homeTab(\'player\')" style="flex:1">Player Login</button>' +
+    '<button class="tab-btn" id="tab-admin" onclick="homeTab(\'admin\')" style="flex:1">Admin Login</button></div>' +
+    '<div id="home-player-panel">' +
+    (!opts ? '<p style="color:#94a3b8;text-align:center">No players set up yet.</p>' :
+      '<select id="player-select" style="margin-bottom:12px"><option value="">Select your name...</option>' + opts + '</select>' +
+      '<button style="width:100%;padding:11px;background:#2563eb;color:#fff;font-size:16px" onclick="loginPlayer()">Enter Pool</button>') + '</div>' +
+    '<div id="home-admin-panel" style="display:none">' +
+    '<input type="password" id="admin-pw" placeholder="Commissioner password" style="margin-bottom:8px" onkeydown="if(event.key===\'Enter\')loginAdmin()"/>' +
+    '<div id="pw-error" style="color:#ef4444;font-size:13px;margin-bottom:8px"></div>' +
+    '<button style="width:100%;padding:11px;background:#7c3aed;color:#fff;font-size:16px" onclick="loginAdmin()">Login as Admin</button></div></div>';
+}
+window.homeTab = function(t) {
+  document.getElementById("home-player-panel").style.display = t==="player"?"block":"none";
+  document.getElementById("home-admin-panel").style.display  = t==="admin"?"block":"none";
+  document.getElementById("tab-player").classList.toggle("active",t==="player");
+  document.getElementById("tab-admin").classList.toggle("active",t==="admin");
+};
+window.loginPlayer = function() {
+  var el = document.getElementById("player-select"); if (!el||!el.value) return;
+  appState.user = { name:el.value, isAdmin:false }; appState.view = "player"; render();
+};
+window.loginAdmin = function() {
+  var el = document.getElementById("admin-pw");
+  if (el && el.value===ADMIN_PW) { appState.user={name:"Commissioner",isAdmin:true}; appState.view="admin"; render(); }
+  else document.getElementById("pw-error").textContent = "Incorrect password.";
+};
+
+// ADMIN
+function renderAdmin() {
+  var tabLabels = {setup:"Season Setup",players:"Players & Draft Order",runs:"Enter Runs",manage:"Week Management",picks:"Enter Pick",reset:"Reset Pool"};
+  var tabKeys = ["setup","players","runs","manage","picks","reset"];
+  var btns = tabKeys.map(function(t,i) {
+    return '<button class="tab-btn' + (i===0?' active':'') + '" id="atab-' + t + '" onclick="adminTab(\'' + t + '\')">' + tabLabels[t] + '</button>';
+  }).join("");
+  return '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin-bottom:16px">Commissioner Panel</h2>' +
+    '<div class="admin-tabs" style="margin-bottom:20px">' + btns + '</div>' +
+    '<div id="admin-panel">' + renderAdminSetup() + '</div>';
+}
+window.adminTab = function(t) {
+  ["setup","players","runs","manage","picks","reset"].forEach(function(x) {
+    var el = document.getElementById("atab-"+x); if (el) el.classList.toggle("active",x===t);
+  });
+  var panel = document.getElementById("admin-panel");
+  if (t==="setup")   panel.innerHTML = renderAdminSetup();
+  if (t==="players") panel.innerHTML = renderAdminPlayers();
+  if (t==="runs")    panel.innerHTML = renderAdminRuns(currentWeek());
+  if (t==="manage")  panel.innerHTML = renderAdminManage(currentWeek());
+  if (t==="picks")   panel.innerHTML = renderAdminPicks(currentWeek());
+  if (t==="reset")   panel.innerHTML = renderAdminReset();
+};
+
+function renderAdminSetup() {
+  return '<div class="card" style="max-width:400px">' +
+    '<h3 style="font-weight:700;margin-bottom:16px">Season Settings</h3>' +
+    '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Season Start Date</label>' +
+    '<input type="date" id="season-start" value="' + (appState.data.seasonStart||'') + '" style="margin-bottom:14px"/>' +
+    '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Number of Weeks</label>' +
+    '<input type="number" id="week-count" value="' + (appState.data.weekCount||26) + '" min="1" max="30" style="margin-bottom:16px"/>' +
+    '<button style="padding:10px 24px;background:#2563eb;color:#fff" onclick="saveSetup()">Save Settings</button></div>';
+}
+window.saveSetup = async function() {
+  var d = JSON.parse(JSON.stringify(appState.data));
+  d.seasonStart = document.getElementById("season-start").value;
+  d.weekCount = Number(document.getElementById("week-count").value);
+  await saveData(d); flash("Season settings saved!");
+};
+
+function renderAdminPlayers() {
+  var players = (appState.data.players&&appState.data.players.length) ? appState.data.players : [];
+  while (players.length < 8) players.push({name:"",draftOrder:{}});
+  var inputs = players.map(function(p,i) { return '<input id="pname-'+i+'" value="'+(p.name||'')+'" placeholder="Player '+(i+1)+'" style="margin-bottom:10px"/>'; }).join("");
+  return '<div style="display:flex;gap:20px;flex-wrap:wrap">' +
+    '<div class="card" style="flex:1 1 260px"><h3 style="font-weight:700;margin-bottom:14px">Player Names</h3>' + inputs +
+    '<button style="padding:10px 24px;background:#2563eb;color:#fff;margin-top:4px" onclick="savePlayers()">Save Players</button></div>' +
+    '<div class="card" style="flex:1 1 260px"><h3 style="font-weight:700;margin-bottom:12px">Draft Order by Week</h3>' +
+    '<p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Auto-rotation: 1-6-5-3-8-2-4-7. Override a specific week below.</p>' +
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
+    '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
+    '<input type="number" id="order-week" value="1" min="1" max="'+(appState.data.weekCount||26)+'" style="width:60px"/>' +
+    '<button style="padding:6px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadOrderEditor()">Edit</button></div>' +
+    '<div id="order-editor"></div></div></div>';
+}
+window.savePlayers = async function() {
+  var existing = (appState.data.players&&appState.data.players.length) ? appState.data.players : [];
+  while (existing.length < 8) existing.push({name:"",draftOrder:{}});
+  var updated = existing.map(function(p,i) {
+    var el = document.getElementById("pname-"+i);
+    return { name: el?el.value.trim():"", draftOrder: p.draftOrder||{} };
+  }).filter(function(p) { return p.name; });
+  if (updated.length < 2) { flash("Need at least 2 players.","#dc2626"); return; }
+  var d = JSON.parse(JSON.stringify(appState.data)); d.players = updated;
+  await saveData(d); flash("Players saved!");
+};
+window.loadOrderEditor = function() { renderOrderEditor(Number(document.getElementById("order-week").value)); };
+function renderOrderEditor(weekNum) {
+  var players = appState.data.players || [];
+  if (!players.length) { document.getElementById("order-editor").innerHTML = '<p style="color:#94a3b8">Save players first.</p>'; return; }
+  orderState = players.slice().sort(function(a,b) {
+    return ((a.draftOrder&&a.draftOrder[weekNum]!==undefined)?a.draftOrder[weekNum]:99) - ((b.draftOrder&&b.draftOrder[weekNum]!==undefined)?b.draftOrder[weekNum]:99);
+  });
+  var rows = orderState.map(function(p,i) {
+    return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;background:#0f172a;border-radius:8px;padding:8px 12px">' +
+      '<span style="color:#38bdf8;width:24px;font-weight:800">#'+(i+1)+'</span>' +
+      '<span style="flex:1;font-weight:600">'+p.name+'</span>' +
+      '<button style="padding:2px 9px;background:#334155;color:#f1f5f9;border-radius:4px" onclick="orderMove('+weekNum+','+i+',-1)">Up</button>' +
+      '<button style="padding:2px 9px;background:#334155;color:#f1f5f9;border-radius:4px" onclick="orderMove('+weekNum+','+i+',1)">Dn</button></div>';
+  }).join("");
+  document.getElementById("order-editor").innerHTML =
+    '<div style="color:#38bdf8;font-weight:700;margin-bottom:10px">Week '+weekNum+' Pick Order</div>' + rows +
+    '<button style="margin-top:8px;padding:8px 18px;background:#16a34a;color:#fff" onclick="saveOrder('+weekNum+')">Save Order</button>';
+}
+window.orderMove = function(weekNum,idx,dir) {
+  var ni = idx+dir; if (ni<0||ni>=orderState.length) return;
+  var tmp=orderState[idx]; orderState[idx]=orderState[ni]; orderState[ni]=tmp;
+  orderState.forEach(function(p,i) { p.draftOrder=p.draftOrder||{}; p.draftOrder[weekNum]=i; });
+  renderOrderEditor(weekNum);
+};
+window.saveOrder = async function(weekNum) {
+  var d = JSON.parse(JSON.stringify(appState.data));
+  d.players.forEach(function(p) {
+    var u = orderState.find(function(x) { return x.name===p.name; });
+    if (u) { p.draftOrder=p.draftOrder||{}; p.draftOrder[weekNum]=u.draftOrder[weekNum]; }
+  });
+  await saveData(d); flash("Week "+weekNum+" order saved!");
+};
+
+function renderAdminRuns(w) {
+  var picks = (appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)||{};
+  var runs  = (appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].runs)||{};
+  var entries = Object.keys(picks);
+  var rows = entries.map(function(player) {
+    var team = picks[player];
+    return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;background:#0f172a;border-radius:8px;padding:10px 14px">' +
+      '<div style="flex:1"><div style="font-weight:600">'+player+'</div><div style="color:#94a3b8;font-size:13px">'+team+'</div></div>' +
+      '<input type="number" id="run-'+team.replace(/ /g,'_')+'" value="'+(runs[team]!==undefined?runs[team]:'')+'" min="0" placeholder="Runs" style="width:75px;text-align:center"/></div>';
+  }).join("");
+  return '<div class="card" style="max-width:520px">' +
+    '<h3 style="font-weight:700;margin-bottom:14px">Enter / Override Runs</h3>' +
+    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:18px;flex-wrap:wrap">' +
+    '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
+    '<input type="number" id="runs-week" value="'+w+'" min="1" max="'+(appState.data.weekCount||26)+'" style="width:60px"/>' +
+    '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="changeRunsWeek()">Load</button>' +
+    '<button id="fetch-btn" style="padding:7px 14px;background:#0891b2;color:#fff;font-size:13px" onclick="fetchLiveRunsAdmin()">Fetch Live</button></div>' +
+    '<div id="runs-rows">'+(entries.length===0?'<p style="color:#94a3b8">No picks for this week yet.</p>':rows)+'</div>' +
+    (entries.length>0?'<button style="margin-top:8px;padding:10px 24px;background:#2563eb;color:#fff" onclick="saveRuns('+w+')">Save Runs</button>':'')+'</div>';
+}
+window.changeRunsWeek = function() { document.getElementById("admin-panel").innerHTML = renderAdminRuns(Number(document.getElementById("runs-week").value)); };
+window.saveRuns = async function(w) {
+  var picks = (appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)||{};
+  var runs = {};
+  Object.values(picks).forEach(function(team) {
+    var el = document.getElementById("run-"+team.replace(/ /g,'_'));
+    if (el&&el.value!=="") runs[team] = Number(el.value);
+  });
+  var d = JSON.parse(JSON.stringify(appState.data));
+  d.weeks=d.weeks||{}; d.weeks[w]=d.weeks[w]||{}; d.weeks[w].runs=runs;
+  await saveData(d); flash("Runs saved for Week "+w+"!");
+};
+window.fetchLiveRunsAdmin = async function() {
+  var w = Number(document.getElementById("runs-week").value);
+  var picks = (appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)||{};
+  var teams = Object.values(picks);
+  if (!teams.length) { flash("No picks for this week.","#b45309"); return; }
+  if (!appState.data.seasonStart) { flash("Set season start date first.","#b45309"); return; }
+  var btn = document.getElementById("fetch-btn");
+  btn.innerHTML = '<span class="spinner"></span>Fetching...'; btn.disabled = true;
+  var totals = await fetchRunsFromAPI(w);
+  var found = 0;
+  teams.forEach(function(team) {
+    var el = document.getElementById("run-"+team.replace(/ /g,'_'));
+    if (el&&totals[team]!==undefined) { el.value=totals[team]; found++; }
+  });
+  flash(found?"Fetched runs for "+found+"/"+teams.length+" teams!":"No final game data found yet.","#0891b2");
+  btn.innerHTML = "Fetch Live"; btn.disabled = false;
+};
+
 function renderAdminManage(w) {
   var locked = isWeekLocked(w);
-  var manualLocked = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].locked) || false;
-  var isLocked = locked || manualLocked;
+  var manualLocked = (appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].locked)||false;
+  var isLocked = locked||manualLocked;
   return '<div class="card" style="max-width:400px">' +
     '<h3 style="font-weight:700;margin-bottom:14px">Week Management</h3>' +
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:18px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="manage-week" value="' + w + '" min="1" max="' + (appState.data.weekCount||26) + '" style="width:60px"/>' +
+    '<input type="number" id="manage-week" value="'+w+'" min="1" max="'+(appState.data.weekCount||26)+'" style="width:60px"/>' +
     '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadManage()">Load</button></div>' +
     '<div style="background:#0f172a;border-radius:8px;padding:12px 16px;margin-bottom:16px">' +
-    '<div style="color:#94a3b8;font-size:13px;margin-bottom:4px">Status - Week ' + w + '</div>' +
-    '<div style="font-weight:700;color:' + (isLocked?"#ef4444":"#16a34a") + '">' + (locked?"Auto-locked (11am ET passed)":manualLocked?"Manually locked":"Open for picks") + '</div></div>' +
+    '<div style="color:#94a3b8;font-size:13px;margin-bottom:4px">Status - Week '+w+'</div>' +
+    '<div style="font-weight:700;color:'+(isLocked?"#ef4444":"#16a34a")+'">'+(locked?"Auto-locked (10pm ET Sunday)":manualLocked?"Manually locked":"Open for picks")+'</div></div>' +
     '<div style="display:flex;gap:10px">' +
-    '<button style="padding:10px 18px;background:' + (manualLocked?"#16a34a":"#ef4444") + ';color:#fff" onclick="toggleLock(' + w + ',' + manualLocked + ')">' + (manualLocked?"Unlock Week":"Lock Week") + '</button>' +
-    '<button style="padding:10px 18px;background:#b45309;color:#fff" onclick="clearPicks(' + w + ')">Clear Picks</button></div></div>';
+    '<button style="padding:10px 18px;background:'+(manualLocked?"#16a34a":"#ef4444")+';color:#fff" onclick="toggleLock('+w+','+manualLocked+')">'+(manualLocked?"Unlock Week":"Lock Week")+'</button>' +
+    '<button style="padding:10px 18px;background:#b45309;color:#fff" onclick="clearPicks('+w+')">Clear Picks</button></div></div>';
 }
 window.loadManage = function() { document.getElementById("admin-panel").innerHTML = renderAdminManage(Number(document.getElementById("manage-week").value)); };
-window.toggleLock = async function(w, locked) {
+window.toggleLock = async function(w,locked) {
   var d = JSON.parse(JSON.stringify(appState.data));
-  d.weeks = d.weeks||{}; d.weeks[w] = d.weeks[w]||{}; d.weeks[w].locked = !locked;
-  await saveData(d); flash("Week " + w + " " + (!locked?"locked":"unlocked") + "!");
+  d.weeks=d.weeks||{}; d.weeks[w]=d.weeks[w]||{}; d.weeks[w].locked=!locked;
+  await saveData(d); flash("Week "+w+" "+(!locked?"locked":"unlocked")+"!");
   document.getElementById("admin-panel").innerHTML = renderAdminManage(w);
 };
 window.clearPicks = async function(w) {
-  if (!confirm("Clear all picks for Week " + w + "?")) return;
+  if (!confirm("Clear all picks for Week "+w+"?")) return;
   var d = JSON.parse(JSON.stringify(appState.data));
-  d.weeks = d.weeks||{}; d.weeks[w] = d.weeks[w]||{}; d.weeks[w].picks = {};
-  await saveData(d); flash("Week " + w + " picks cleared.");
+  d.weeks=d.weeks||{}; d.weeks[w]=d.weeks[w]||{}; d.weeks[w].picks={};
+  await saveData(d); flash("Week "+w+" picks cleared.");
 };
 
 function renderAdminPicks(w) {
-  var players = appState.data.players || [];
-  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
-  var takenList = [];
-  for (var p in picks) takenList.push(picks[p]);
-  var rows = "";
-  for (var i = 0; i < players.length; i++) {
-    var pl = players[i];
-    var current = picks[pl.name] || "";
+  var players = appState.data.players||[];
+  var picks = (appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)||{};
+  var takenList = Object.values(picks);
+  var rows = players.map(function(pl) {
+    var current = picks[pl.name]||"";
     var used = usedTeams(pl.name);
-    var opts = '<option value="">No pick</option>';
-    for (var j = 0; j < MLB_TEAMS.length; j++) {
-      var t = MLB_TEAMS[j];
-      var isTaken = takenList.indexOf(t) >= 0 && t !== current;
-      var isUsed = used.indexOf(t) >= 0 && t !== current;
-      var dis = isTaken || isUsed;
-      opts += '<option value="' + t + '"' + (current===t?" selected":"") + (dis?" disabled":"") + '>' + t + (isTaken?" (taken)":isUsed?" (used)":"") + '</option>';
-    }
-    rows += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;background:#0f172a;border-radius:8px;padding:10px 14px;flex-wrap:wrap">' +
-      '<div style="min-width:120px;font-weight:600">' + pl.name + '</div>' +
-      '<select id="apick-' + pl.name.replace(/ /g,'_') + '" style="flex:1;min-width:180px">' + opts + '</select></div>';
-  }
+    var opts = '<option value="">No pick</option>' + MLB_TEAMS.map(function(t) {
+      var isTaken = takenList.indexOf(t)>=0 && t!==current;
+      var isUsed = used.indexOf(t)>=0 && t!==current;
+      return '<option value="'+t+'"'+(current===t?" selected":"")+(isTaken||isUsed?" disabled":"")+'>'+t+(isTaken?" (taken)":isUsed?" (used)":"")+'</option>';
+    }).join("");
+    return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;background:#0f172a;border-radius:8px;padding:10px 14px;flex-wrap:wrap">' +
+      '<div style="min-width:120px;font-weight:600">'+pl.name+'</div>' +
+      '<select id="apick-'+pl.name.replace(/ /g,'_')+'" style="flex:1;min-width:180px">'+opts+'</select></div>';
+  }).join("");
   return '<div class="card" style="max-width:580px">' +
     '<h3 style="font-weight:700;margin-bottom:14px">Enter Pick for Player</h3>' +
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:18px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="apick-week" value="' + w + '" min="1" max="' + (appState.data.weekCount||26) + '" style="width:60px"/>' +
+    '<input type="number" id="apick-week" value="'+w+'" min="1" max="'+(appState.data.weekCount||26)+'" style="width:60px"/>' +
     '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadAdminPicks()">Load</button></div>' +
-    '<div id="apick-rows">' + rows + '</div>' +
+    '<div id="apick-rows">'+rows+'</div>' +
     '<div style="margin-top:16px;display:flex;gap:10px">' +
-    '<button style="padding:10px 24px;background:#2563eb;color:#fff" onclick="saveAdminPicks(' + w + ')">Save Picks</button>' +
-    '<button style="padding:10px 24px;background:#b45309;color:#fff" onclick="clearAdminPick(' + w + ')">Clear All Picks</button></div></div>';
+    '<button style="padding:10px 24px;background:#2563eb;color:#fff" onclick="saveAdminPicks('+w+')">Save Picks</button>' +
+    '<button style="padding:10px 24px;background:#b45309;color:#fff" onclick="clearAdminPick('+w+')">Clear All Picks</button></div></div>';
 }
 window.loadAdminPicks = function() { document.getElementById("admin-panel").innerHTML = renderAdminPicks(Number(document.getElementById("apick-week").value)); };
 window.saveAdminPicks = async function(w) {
-  var players = appState.data.players || [];
-  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) ? JSON.parse(JSON.stringify(appState.data.weeks[w].picks)) : {};
+  var players = appState.data.players||[];
+  var picks = (appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)?JSON.parse(JSON.stringify(appState.data.weeks[w].picks)):{};
   var teamCount = {};
-  for (var i = 0; i < players.length; i++) {
-    var el = document.getElementById("apick-" + players[i].name.replace(/ /g,'_'));
-    if (el && el.value) teamCount[el.value] = (teamCount[el.value]||0)+1;
-  }
-  var dupes = [];
-  for (var t in teamCount) { if (teamCount[t]>1) dupes.push(t); }
-  if (dupes.length) { flash("Conflict: " + dupes.join(", ") + " selected by more than one player.", "#dc2626"); return; }
-  for (var j = 0; j < players.length; j++) {
-    var el2 = document.getElementById("apick-" + players[j].name.replace(/ /g,'_'));
-    if (!el2) continue;
-    if (el2.value) picks[players[j].name] = el2.value;
-    else delete picks[players[j].name];
-  }
-  var d = JSON.parse(JSON.stringify(appState.data));
-  d.weeks = d.weeks||{}; d.weeks[w] = d.weeks[w]||{}; d.weeks[w].picks = picks;
-  await saveData(d); flash("Picks saved for Week " + w + "!");
+  players.forEach(function(p) { var el=document.getElementById("apick-"+p.name.replace(/ /g,'_')); if(el&&el.value) teamCount[el.value]=(teamCount[el.value]||0)+1; });
+  var dupes = Object.keys(teamCount).filter(function(t) { return teamCount[t]>1; });
+  if (dupes.length) { flash("Conflict: "+dupes.join(", ")+" selected by more than one player.","#dc2626"); return; }
+  players.forEach(function(p) {
+    var el=document.getElementById("apick-"+p.name.replace(/ /g,'_')); if (!el) return;
+    if (el.value) picks[p.name]=el.value; else delete picks[p.name];
+  });
+  var d=JSON.parse(JSON.stringify(appState.data)); d.weeks=d.weeks||{}; d.weeks[w]=d.weeks[w]||{}; d.weeks[w].picks=picks;
+  await saveData(d); flash("Picks saved for Week "+w+"!");
   document.getElementById("admin-panel").innerHTML = renderAdminPicks(w);
 };
 window.clearAdminPick = async function(w) {
-  if (!confirm("Clear ALL picks for Week " + w + "?")) return;
-  var d = JSON.parse(JSON.stringify(appState.data));
-  d.weeks = d.weeks||{}; d.weeks[w] = d.weeks[w]||{}; d.weeks[w].picks = {};
-  await saveData(d); flash("All picks cleared for Week " + w + ".");
+  if (!confirm("Clear ALL picks for Week "+w+"?")) return;
+  var d=JSON.parse(JSON.stringify(appState.data)); d.weeks=d.weeks||{}; d.weeks[w]=d.weeks[w]||{}; d.weeks[w].picks={};
+  await saveData(d); flash("All picks cleared for Week "+w+".");
   document.getElementById("admin-panel").innerHTML = renderAdminPicks(w);
 };
 
@@ -782,151 +700,132 @@ function renderAdminReset() {
     '<button style="padding:10px 20px;background:#b45309;color:#fff" onclick="doResetPool(false)">Reset Season Data Only</button></div>' +
     '<div style="background:#0f172a;border-radius:10px;padding:16px">' +
     '<div style="font-weight:700;margin-bottom:4px">Full Reset</div>' +
-    '<div style="color:#94a3b8;font-size:13px;margin-bottom:12px">Wipes everything including player names. Blank slate.</div>' +
+    '<div style="color:#94a3b8;font-size:13px;margin-bottom:12px">Wipes everything including player names.</div>' +
     '<button style="padding:10px 20px;background:#ef4444;color:#fff" onclick="doResetPool(true)">Full Reset - Wipe Everything</button></div></div></div>';
 }
 window.doResetPool = async function(fullReset) {
-  var answer = prompt(fullReset ? "FULL RESET: Wipes ALL data. Type RESET to confirm:" : "SOFT RESET: Clears picks/runs/dates, keeps names. Type RESET to confirm:");
-  if (answer !== "RESET") { flash("Reset cancelled.", "#b45309"); return; }
+  var answer = prompt(fullReset?"FULL RESET: Type RESET to confirm:":"SOFT RESET: Type RESET to confirm:");
+  if (answer!=="RESET") { flash("Reset cancelled.","#b45309"); return; }
   var newData = defaultData();
-  if (!fullReset) {
-    var players = appState.data.players || [];
-    for (var i = 0; i < players.length; i++) newData.players.push({ name: players[i].name, draftOrder: {} });
-  }
-  scheduleCache = {}; liveRunsCache = {};
+  if (!fullReset) (appState.data.players||[]).forEach(function(p) { newData.players.push({name:p.name,draftOrder:{}}); });
+  scheduleCache={}; liveRunsCache={};
   await saveData(newData);
-  flash(fullReset ? "Pool fully reset!" : "Season data cleared - player names kept!", "#b45309");
+  flash(fullReset?"Pool fully reset!":"Season data cleared - player names kept!","#b45309");
   document.getElementById("admin-panel").innerHTML = renderAdminReset();
 };
 
-// PLAYER VIEW
+// PLAYER
 function renderPlayer() {
-  var name = appState.user.name;
-  var w = currentWeek();
-  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
-  var runs  = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].runs)  || {};
-  var myPick = picks[name] || null;
-  var myRuns = (myPick && runs[myPick] !== undefined) ? runs[myPick] : null;
-  var used = usedTeams(name);
-  var taken = takenTeamsThisWeek(w);
-  var players = appState.data.players || [];
-  var playerIndex = -1;
-  for (var i = 0; i < players.length; i++) { if (players[i].name === name) { playerIndex = i; break; } }
-  var pos = playerIndex >= 0 ? getDraftPosition(playerIndex, w) + 1 : null;
+  var name = appState.user.name, w = currentWeek();
+  var picks = (appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)||{};
+  var runs  = (appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].runs)||{};
+  var myPick = picks[name]||null;
+  var myRuns = (myPick&&runs[myPick]!==undefined)?runs[myPick]:null;
+  var used = usedTeams(name), taken = takenTeamsThisWeek(w);
+  var players = appState.data.players||[];
+  var playerIndex = players.findIndex(function(x){return x.name===name;});
+  var pos = playerIndex>=0 ? getDraftPosition(playerIndex,w)+1 : null;
   var win = getWeekWindow(w);
-  var pickCheck = canPlayerPick(w, name);
+  var pickCheck = canPlayerPick(w,name);
   var weekLocked = isWeekLocked(w);
   var draftOpen = isDraftOpen(w);
-
-  if (draftOpen || weekLocked) processAutoPicks(w);
+  if (draftOpen||weekLocked) processAutoPicks(w);
 
   var statusBox;
   if (myPick) {
-    statusBox = '<div style="margin-top:10px;padding:12px 16px;background:#16a34a22;border-radius:8px;border:1px solid #16a34a">Picked: <strong>' + myPick + '</strong>' + (myRuns!==null?' <span style="color:#fbbf24">' + myRuns + ' runs</span>':'') + '</div>';
+    statusBox = '<div style="margin-top:10px;padding:12px 16px;background:#16a34a22;border-radius:8px;border:1px solid #16a34a">Picked: <strong>'+myPick+'</strong>'+(myRuns!==null?' <span style="color:#fbbf24">'+myRuns+' runs</span>':'')+'</div>';
   } else if (weekLocked) {
     statusBox = '<div style="margin-top:10px;padding:10px 16px;background:#ef444422;border:1px solid #ef4444;border-radius:8px;color:#ef4444;font-weight:600">Week is locked - 10:00pm ET Sunday deadline has passed.</div>';
-  } else if (!draftOpen && win) {
-    statusBox = '<div style="margin-top:10px;padding:10px 16px;background:#334155;border-radius:8px;color:#94a3b8;font-size:13px">Draft opens <strong style="color:#38bdf8">' + formatET(win.openET) + ' ET</strong></div>';
+  } else if (!draftOpen&&win) {
+    statusBox = '<div style="margin-top:10px;padding:10px 16px;background:#334155;border-radius:8px;color:#94a3b8;font-size:13px">Draft opens <strong style="color:#38bdf8">'+formatET(win.openET)+' ET</strong></div>';
   } else if (pickCheck.can) {
-    statusBox = '<div style="margin-top:10px;padding:10px 16px;background:#2563eb22;border:1px solid #2563eb;border-radius:8px;color:#38bdf8;font-weight:600">It\'s your turn to pick! <span style="font-size:12px;font-weight:400;color:#94a3b8">Pick by ' + formatET(pickCheck.deadline) + ' ET or a default will be assigned.</span></div>';
+    statusBox = '<div style="margin-top:10px;padding:10px 16px;background:#2563eb22;border:1px solid #2563eb;border-radius:8px;color:#38bdf8;font-weight:600">It\'s your turn to pick! <span style="font-size:12px;font-weight:400;color:#94a3b8">Pick by '+formatET(pickCheck.deadline)+' ET or a default will be assigned.</span></div>';
   } else {
-    var myDeadline = getPickDeadline(w, playerIndex);
-    statusBox = '<div style="margin-top:10px;padding:10px 16px;background:#1e293b;border-radius:8px;color:#94a3b8;font-size:13px">' + pickCheck.reason +
-      (myDeadline && !weekLocked ? ' <span style="color:#f59e0b">Your deadline: ' + formatET(myDeadline) + ' ET.</span>' : '') + '</div>';
+    var myDeadline = getPickDeadline(w,playerIndex);
+    statusBox = '<div style="margin-top:10px;padding:10px 16px;background:#1e293b;border-radius:8px;color:#94a3b8;font-size:13px">'+pickCheck.reason+(myDeadline&&!weekLocked?' <span style="color:#f59e0b">Your deadline: '+formatET(myDeadline)+' ET.</span>':'')+'</div>';
   }
 
   var teamGrid = "";
-  if (!myPick && pickCheck.can) {
-    var btns = "";
-    for (var t = 0; t < MLB_TEAMS.length; t++) {
-      var team = MLB_TEAMS[t];
-      var isTaken = taken.indexOf(team) >= 0;
-      var isUsed  = used.indexOf(team) >= 0;
-      var dis = isTaken || isUsed;
-      btns += '<button class="team-btn' + (isTaken?' taken':isUsed?' used':'') + '" ' + (dis?'disabled':'') + ' onclick="makePick(\'' + team.replace(/'/g,"\\'") + '\',' + w + ')">' +
-        team + (isTaken?' <span style="font-size:11px;color:#ef4444">taken</span>':isUsed?' <span style="font-size:11px;color:#9333ea">used</span>':'') + '</button>';
-    }
-    teamGrid = '<div class="card" style="margin-top:16px"><h3 style="font-weight:700;margin-bottom:14px">Select Your Team - Week ' + w + '</h3><div class="team-grid">' + btns + '</div></div>';
+  if (!myPick&&pickCheck.can) {
+    var btns = MLB_TEAMS.map(function(team) {
+      var isTaken=taken.indexOf(team)>=0, isUsed=used.indexOf(team)>=0, dis=isTaken||isUsed;
+      return '<button class="team-btn'+(isTaken?' taken':isUsed?' used':'')+'" '+(dis?'disabled':'')+' onclick="makePick(\''+team.replace(/'/g,"\\'")+'\','+w+')">'+
+        team+(isTaken?' <span style="font-size:11px;color:#ef4444">taken</span>':isUsed?' <span style="font-size:11px;color:#9333ea">used</span>':'')+'</button>';
+    }).join("");
+    teamGrid = '<div class="card" style="margin-top:16px"><h3 style="font-weight:700;margin-bottom:14px">Select Your Team - Week '+w+'</h3><div class="team-grid">'+btns+'</div></div>';
   }
 
   var histRows = "";
-  for (var wk = 1; wk <= (appState.data.weekCount||26); wk++) {
-    var wPick = (appState.data.weeks && appState.data.weeks[wk] && appState.data.weeks[wk].picks && appState.data.weeks[wk].picks[name]) || null;
-    var wRuns = (wPick && appState.data.weeks[wk].runs) ? appState.data.weeks[wk].runs[wPick] : null;
-    if (wPick) histRows += '<tr><td style="color:#94a3b8">Wk ' + wk + '</td><td style="font-weight:600">' + wPick + '</td><td style="color:#fbbf24;text-align:right">' + (wRuns!==null?wRuns+" runs":"--") + '</td></tr>';
+  for (var wk=1;wk<=(appState.data.weekCount||26);wk++) {
+    var wPick=(appState.data.weeks&&appState.data.weeks[wk]&&appState.data.weeks[wk].picks&&appState.data.weeks[wk].picks[name])||null;
+    var wRuns=(wPick&&appState.data.weeks[wk].runs)?appState.data.weeks[wk].runs[wPick]:null;
+    if (wPick) histRows+='<tr><td style="color:#94a3b8">Wk '+wk+'</td><td style="font-weight:600">'+wPick+'</td><td style="color:#fbbf24;text-align:right">'+(wRuns!==null?wRuns+" runs":"--")+'</td></tr>';
   }
-
-  var scheduleInfo = win ? '<div style="color:#94a3b8;font-size:12px;margin-top:6px">Draft opens: ' + formatET(win.openET) + ' ET | Deadline: ' + formatET(win.closeET) + ' ET</div>' : '';
+  var schedInfo = win?'<div style="color:#94a3b8;font-size:12px;margin-top:6px">Draft opens: '+formatET(win.openET)+' ET | Deadline: '+formatET(win.closeET)+' ET</div>':'';
 
   return '<div style="display:flex;gap:8px;margin-bottom:20px">' +
     '<button class="tab-btn active" id="ptab-pick" onclick="playerTab(\'pick\')">Make Pick</button>' +
     '<button class="tab-btn" id="ptab-history" onclick="playerTab(\'history\')">My History</button></div>' +
     '<div id="player-panel"><div class="card">' +
-    '<div style="font-weight:800;font-size:18px;margin-bottom:4px">Week ' + w + ' - ' + name + '</div>' +
-    (pos?'<div style="color:#94a3b8;font-size:14px">Draft position this week: <strong style="color:#38bdf8">#' + pos + '</strong></div>':'') +
-    scheduleInfo + statusBox + '</div>' + teamGrid + '</div>' +
+    '<div style="font-weight:800;font-size:18px;margin-bottom:4px">Week '+w+' - '+name+'</div>' +
+    (pos?'<div style="color:#94a3b8;font-size:14px">Draft position this week: <strong style="color:#38bdf8">#'+pos+'</strong></div>':'')+
+    schedInfo+statusBox+'</div>'+teamGrid+'</div>' +
     '<div id="player-history" style="display:none"><div class="card">' +
     '<h3 style="font-weight:700;margin-bottom:14px">My Season History</h3>' +
-    (histRows?'<table><thead><tr><th>Week</th><th>Team</th><th style="text-align:right">Runs</th></tr></thead><tbody>' + histRows + '</tbody></table>':'<p style="color:#94a3b8">No picks recorded yet.</p>') +
+    (histRows?'<table><thead><tr><th>Week</th><th>Team</th><th style="text-align:right">Runs</th></tr></thead><tbody>'+histRows+'</tbody></table>':'<p style="color:#94a3b8">No picks recorded yet.</p>')+
     '</div></div>';
 }
 window.playerTab = function(t) {
-  document.getElementById("player-panel").style.display = t==="pick"?"block":"none";
-  document.getElementById("player-history").style.display = t==="history"?"block":"none";
+  document.getElementById("player-panel").style.display=t==="pick"?"block":"none";
+  document.getElementById("player-history").style.display=t==="history"?"block":"none";
   document.getElementById("ptab-pick").classList.toggle("active",t==="pick");
   document.getElementById("ptab-history").classList.toggle("active",t==="history");
 };
-window.makePick = async function(team, w) {
-  var name = appState.user.name;
-  var pickCheck = canPlayerPick(w, name);
-  if (!pickCheck.can) { flash(pickCheck.reason, "#dc2626"); return; }
-  if (takenTeamsThisWeek(w).indexOf(team) >= 0) { flash("That team is already taken!", "#dc2626"); return; }
-  if (usedTeams(name).indexOf(team) >= 0) { flash("You already used that team this season!", "#dc2626"); return; }
-  var d = JSON.parse(JSON.stringify(appState.data));
-  d.weeks = d.weeks||{}; d.weeks[w] = d.weeks[w]||{}; d.weeks[w].picks = d.weeks[w].picks||{};
-  d.weeks[w].picks[name] = team;
-  await saveData(d); flash("Picked " + team + " for Week " + w + "!");
+window.makePick = async function(team,w) {
+  var name=appState.user.name, pickCheck=canPlayerPick(w,name);
+  if (!pickCheck.can) { flash(pickCheck.reason,"#dc2626"); return; }
+  if (takenTeamsThisWeek(w).indexOf(team)>=0) { flash("That team is already taken!","#dc2626"); return; }
+  if (usedTeams(name).indexOf(team)>=0) { flash("You already used that team this season!","#dc2626"); return; }
+  var d=JSON.parse(JSON.stringify(appState.data));
+  d.weeks=d.weeks||{}; d.weeks[w]=d.weeks[w]||{}; d.weeks[w].picks=d.weeks[w].picks||{};
+  d.weeks[w].picks[name]=team;
+  await saveData(d); flash("Picked "+team+" for Week "+w+"!");
 };
 
 // DRAFT BOARD
 function renderDraftShell() {
-  var w = currentWeek();
+  var w=currentWeek();
   return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">' +
     '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin:0">Draft Board</h2>' +
     '<div style="margin-left:auto;display:flex;gap:8px;align-items:center">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="draft-week" value="' + w + '" min="1" max="' + (appState.data.weekCount||26) + '" style="width:60px"/>' +
+    '<input type="number" id="draft-week" value="'+w+'" min="1" max="'+(appState.data.weekCount||26)+'" style="width:60px"/>' +
     '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadDraftTable(Number(document.getElementById(\'draft-week\').value))">Load</button></div></div>' +
     '<div id="draft-table"><div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div></div>';
 }
 async function loadDraftTable(w) {
-  var el = document.getElementById("draft-table");
-  if (!el) return;
-  el.innerHTML = '<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div>';
-  var ordered = orderedPlayers(w);
-  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
-  var runs  = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].runs)  || {};
-  var games = await fetchScheduleFromAPI(w);
-  var win = getWeekWindow(w);
-  if (!ordered.length) { el.innerHTML = '<p style="color:#94a3b8">No players configured yet.</p>'; return; }
-  var rows = "";
-  for (var i = 0; i < ordered.length; i++) {
-    var p = ordered[i];
-    var team = picks[p.name] || null;
-    var r = (team && runs[team] !== undefined) ? runs[team] : null;
-    var g = team ? (games[team] !== undefined ? games[team] : "--") : "--";
-    var deadline = getPickDeadline(w, i);
-    var deadlineStr = (deadline && win && new Date() >= win.mondayBase) ? '<span style="color:#f59e0b;font-size:11px"> (by ' + formatET(deadline) + ')</span>' : '';
-    rows += '<tr><td style="color:#38bdf8;font-weight:800">#' + (i+1) + '</td>' +
-      '<td style="font-weight:600">' + p.name + (team?'':deadlineStr) + '</td>' +
-      '<td style="color:' + (team?"#f1f5f9":"#475569") + '">' + (team||"<em>Pending...</em>") + '</td>' +
-      '<td style="text-align:center;color:#34d399;font-weight:700">' + g + '</td>' +
-      '<td style="text-align:right;font-weight:700;color:#fbbf24">' + (r!==null?r:"--") + '</td></tr>';
-  }
-  var windowInfo = win ? '<div style="color:#94a3b8;font-size:12px;margin-bottom:12px">Draft opens: ' + formatET(win.openET) + ' ET | Deadline: ' + formatET(win.closeET) + ' ET</div>' : '';
-  el.innerHTML = windowInfo + '<div class="table-wrap"><table>' +
+  var el=document.getElementById("draft-table"); if (!el) return;
+  el.innerHTML='<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div>';
+  var ordered=orderedPlayers(w);
+  var picks=(appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)||{};
+  var runs=(appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].runs)||{};
+  var games=await fetchScheduleFromAPI(w);
+  var win=getWeekWindow(w);
+  if (!ordered.length) { el.innerHTML='<p style="color:#94a3b8">No players configured yet.</p>'; return; }
+  var rows=ordered.map(function(p,i) {
+    var team=picks[p.name]||null, r=(team&&runs[team]!==undefined)?runs[team]:null, g=team?(games[team]!==undefined?games[team]:"--"):"--";
+    var deadline=getPickDeadline(w,i);
+    var deadStr=(deadline&&win&&new Date()>=win.mondayBase)?'<span style="color:#f59e0b;font-size:11px"> (by '+formatET(deadline)+')</span>':'';
+    return '<tr><td style="color:#38bdf8;font-weight:800">#'+(i+1)+'</td>' +
+      '<td style="font-weight:600">'+p.name+(team?'':deadStr)+'</td>' +
+      '<td style="color:'+(team?"#f1f5f9":"#475569")+'">'+(team||"<em>Pending...</em>")+'</td>' +
+      '<td style="text-align:center;color:#34d399;font-weight:700">'+g+'</td>' +
+      '<td style="text-align:right;font-weight:700;color:#fbbf24">'+(r!==null?r:"--")+'</td></tr>';
+  }).join("");
+  var winInfo=win?'<div style="color:#94a3b8;font-size:12px;margin-bottom:12px">Draft opens: '+formatET(win.openET)+' ET | Deadline: '+formatET(win.closeET)+' ET</div>':'';
+  el.innerHTML=winInfo+'<div class="table-wrap"><table>' +
     '<thead><tr><th>Pick #</th><th>Player</th><th>Team</th><th style="text-align:center">Games</th><th style="text-align:right">Runs</th></tr></thead>' +
-    '<tbody>' + rows + '</tbody></table></div>';
+    '<tbody>'+rows+'</tbody></table></div>';
 }
 window.loadDraftTable = loadDraftTable;
 
@@ -939,282 +838,184 @@ function renderStandingsShell() {
     '<div id="stand-week"><div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Fetching live runs...</div></div>' +
     '<div id="stand-season" style="display:none"></div>';
 }
-
 async function loadStandingsWeek(w) {
-  var el = document.getElementById("stand-week");
-  if (!el) return;
-  el.innerHTML = '<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Fetching live runs...</div>';
-  var liveRuns = await fetchRunsFromAPI(w);
-  liveRunsCache[w] = liveRuns;
-  var savedRuns = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].runs) || {};
-  var mergedRuns = {};
-  for (var t in liveRuns) mergedRuns[t] = liveRuns[t];
-  for (var t2 in savedRuns) mergedRuns[t2] = savedRuns[t2];
-  var rows = calcWeekStandings(w, mergedRuns);
-  var trs = "";
-  for (var i = 0; i < rows.length; i++) {
-    var r = rows[i];
-    var payoutStr, payoutColor;
-    if (r.payout === null) { payoutStr = "--"; payoutColor = "#475569"; }
-    else if (r.payout > 0) { payoutStr = "$" + r.payout.toFixed(2); payoutColor = "#16a34a"; }
-    else if (r.payout < 0) { payoutStr = "-$" + Math.abs(r.payout).toFixed(2); payoutColor = "#ef4444"; }
-    else { payoutStr = "$0.00"; payoutColor = "#475569"; }
-    trs += '<tr style="' + (i===0&&r.runs!==null?"background:#16a34a18":"") + '">' +
-      '<td style="font-weight:800;color:' + (i===0?"#fbbf24":"#94a3b8") + '">' + (i===0?"#1":i+1) + '</td>' +
-      '<td style="font-weight:600">' + r.name + '</td>' +
-      '<td style="color:#94a3b8;font-size:13px">' + (r.team||"--") + '</td>' +
-      '<td style="text-align:right;font-weight:700;color:#38bdf8">' + (r.runs!==null?r.runs:"--") + '</td>' +
-      '<td style="text-align:right;font-weight:700;color:' + payoutColor + '">' + payoutStr + '</td></tr>';
-  }
-  var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
-  var savedRunsObj = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].runs) || {};
-  var numPicks = Object.keys(picks).length;
-  var numSaved = Object.keys(savedRunsObj).length;
-  var statusBanner = "";
-  if (numPicks === 0) {
-    statusBanner = '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 16px;margin-bottom:14px;color:#94a3b8;font-size:13px">No picks made for this week yet.</div>';
-  } else if (numSaved >= numPicks) {
-    statusBanner = '<div style="background:#16a34a22;border:1px solid #16a34a;border-radius:8px;padding:10px 16px;margin-bottom:14px;color:#16a34a;font-size:13px;font-weight:600">Week ' + w + ' runs saved - counting toward Full Season.</div>';
-  } else {
-    statusBanner = '<div style="background:#f59e0b22;border:1px solid #f59e0b;border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:13px">' +
-      '<span style="color:#f59e0b;font-weight:700">Runs not yet saved for Week ' + w + '.</span>' +
-      '<span style="color:#94a3b8;margin-left:8px">Admin must save runs via Admin &rarr; Enter Runs for them to count toward Full Season.</span></div>';
-  }
-  el.innerHTML =
-    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
+  var el=document.getElementById("stand-week"); if (!el) return;
+  el.innerHTML='<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Fetching live runs...</div>';
+  var liveRuns=await fetchRunsFromAPI(w); liveRunsCache[w]=liveRuns;
+  var savedRuns=(appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].runs)||{};
+  var mergedRuns=Object.assign({},liveRuns,savedRuns);
+  var rows=calcWeekStandings(w,mergedRuns);
+  var trs=rows.map(function(r,i) {
+    var ps,pc;
+    if (r.payout===null){ps="--";pc="#475569";}
+    else if (r.payout>0){ps="$"+r.payout.toFixed(2);pc="#16a34a";}
+    else if (r.payout<0){ps="-$"+Math.abs(r.payout).toFixed(2);pc="#ef4444";}
+    else {ps="$0.00";pc="#475569";}
+    return '<tr style="'+(i===0&&r.runs!==null?"background:#16a34a18":"")+'">' +
+      '<td style="font-weight:800;color:'+(i===0?"#fbbf24":"#94a3b8")+'">'+(i===0?"#1":i+1)+'</td>' +
+      '<td style="font-weight:600">'+r.name+'</td>' +
+      '<td style="color:#94a3b8;font-size:13px">'+(r.team||"--")+'</td>' +
+      '<td style="text-align:right;font-weight:700;color:#38bdf8">'+(r.runs!==null?r.runs:"--")+'</td>' +
+      '<td style="text-align:right;font-weight:700;color:'+pc+'">'+ps+'</td></tr>';
+  }).join("");
+  var picks=(appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)||{};
+  var savedR=(appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].runs)||{};
+  var np=Object.keys(picks).length, ns=Object.keys(savedR).length;
+  var banner;
+  if (np===0) banner='<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 16px;margin-bottom:14px;color:#94a3b8;font-size:13px">No picks made for this week yet.</div>';
+  else if (ns>=np) banner='<div style="background:#16a34a22;border:1px solid #16a34a;border-radius:8px;padding:10px 16px;margin-bottom:14px;color:#16a34a;font-size:13px;font-weight:600">Week '+w+' runs saved - counting toward Full Season.</div>';
+  else banner='<div style="background:#f59e0b22;border:1px solid #f59e0b;border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:13px"><span style="color:#f59e0b;font-weight:700">Runs not yet saved for Week '+w+'.</span> <span style="color:#94a3b8">Admin must save runs via Admin &rarr; Enter Runs for them to count toward Full Season.</span></div>';
+  el.innerHTML='<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="week-stand" value="' + w + '" min="1" max="' + (appState.data.weekCount||26) + '" style="width:60px"/>' +
+    '<input type="number" id="week-stand" value="'+w+'" min="1" max="'+(appState.data.weekCount||26)+'" style="width:60px"/>' +
     '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="reloadWeekStand()">Load</button>' +
     '<span style="color:#94a3b8;font-size:12px;margin-left:8px">Live runs auto-fetched</span></div>' +
-    statusBanner +
+    banner +
     '<div class="table-wrap"><table>' +
     '<thead><tr><th>Rank</th><th>Player</th><th>Team</th><th style="text-align:right">Runs</th><th style="text-align:right">Winnings</th></tr></thead>' +
-    '<tbody>' + trs + '</tbody></table></div>';
+    '<tbody>'+trs+'</tbody></table></div>';
 }
-
 window.standTab = function(t) {
-  document.getElementById("stand-week").style.display = t==="week"?"block":"none";
-  document.getElementById("stand-season").style.display = t==="season"?"block":"none";
+  document.getElementById("stand-week").style.display=t==="week"?"block":"none";
+  document.getElementById("stand-season").style.display=t==="season"?"block":"none";
   document.getElementById("stab-week").classList.toggle("active",t==="week");
   document.getElementById("stab-season").classList.toggle("active",t==="season");
   if (t==="season") {
-    var rows = calcSeasonStandings();
-    var trs = "";
-    for (var i = 0; i < rows.length; i++) {
-      var r = rows[i];
-      var wColor = r.totalWinnings > 0 ? "#16a34a" : r.totalWinnings < 0 ? "#ef4444" : "#475569";
-      var wStr = r.totalWinnings >= 0 ? "$" + r.totalWinnings.toFixed(2) : "-$" + Math.abs(r.totalWinnings).toFixed(2);
-      trs += '<tr style="' + (i===0?"background:#16a34a18":"") + '">' +
-        '<td style="font-weight:800;color:' + (i===0?"#fbbf24":"#94a3b8") + '">' + (i===0?"#1":i+1) + '</td>' +
-        '<td style="font-weight:600">' + r.name + '</td>' +
-        '<td style="text-align:right;color:#94a3b8">' + r.weeks + '</td>' +
-        '<td style="text-align:right;font-weight:700;color:#38bdf8">' + r.totalRuns + '</td>' +
-        '<td style="text-align:right;font-weight:700;color:' + wColor + '">' + wStr + '</td></tr>';
-    }
-    document.getElementById("stand-season").innerHTML =
-      '<div class="card" style="padding:0;overflow:hidden"><table>' +
+    var rows=calcSeasonStandings();
+    var trs=rows.map(function(r,i) {
+      var wc=r.totalWinnings>0?"#16a34a":r.totalWinnings<0?"#ef4444":"#475569";
+      var ws=r.totalWinnings>=0?"$"+r.totalWinnings.toFixed(2):"-$"+Math.abs(r.totalWinnings).toFixed(2);
+      return '<tr style="'+(i===0?"background:#16a34a18":"")+'">' +
+        '<td style="font-weight:800;color:'+(i===0?"#fbbf24":"#94a3b8")+'">'+(i===0?"#1":i+1)+'</td>' +
+        '<td style="font-weight:600">'+r.name+'</td>' +
+        '<td style="text-align:right;color:#94a3b8">'+r.weeks+'</td>' +
+        '<td style="text-align:right;font-weight:700;color:#38bdf8">'+r.totalRuns+'</td>' +
+        '<td style="text-align:right;font-weight:700;color:'+wc+'">'+ws+'</td></tr>';
+    }).join("");
+    document.getElementById("stand-season").innerHTML='<div class="table-wrap"><table>' +
       '<thead><tr><th>Rank</th><th>Player</th><th style="text-align:right">Weeks</th><th style="text-align:right">Total Runs</th><th style="text-align:right">Total Won/Owed</th></tr></thead>' +
-      '<tbody>' + trs + '</tbody></table></div>';
+      '<tbody>'+trs+'</tbody></table></div>';
   }
 };
 window.reloadWeekStand = function() { loadStandingsWeek(Number(document.getElementById("week-stand").value)); };
 
+// RESEARCH
 function renderResearchShell() {
   var w = currentWeek();
   var maxWeek = appState.data.weekCount || 26;
   return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">' +
     '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin:0">Schedule Research</h2>' +
-    '<div style="margin-left:auto;display:flex;gap:8px;align-items:center">' +
+    '<div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
     '<input type="number" id="research-week" value="' + w + '" min="1" max="' + maxWeek + '" style="width:60px;font-size:14px"/>' +
-    '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadResearchTable(Number(document.getElementById(\'research-week\').value))">Load</button></div></div>' +
-    '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">' +
-    '<label style="color:#94a3b8;font-size:13px">Show:</label>' +
-    '<select id="research-filter" style="width:auto;font-size:13px;padding:6px 10px" onchange="loadResearchTable(Number(document.getElementById(\'research-week\').value))">' +
-    '<option value="picked">My picked teams only</option>' +
-    '<option value="all">All 30 teams</option>' +
-    '</select>' +
-    '<label style="color:#94a3b8;font-size:13px;margin-left:8px">Sort by:</label>' +
-    '<select id="research-sort" style="width:auto;font-size:13px;padding:6px 10px" onchange="loadResearchTable(Number(document.getElementById(\'research-week\').value))">' +
-    '<option value="name">Team Name</option>' +
-    '<option value="games">Total Games</option>' +
-    '</select></div>' +
-    '<p style="color:#94a3b8;font-size:13px;margin-bottom:14px">Opponent shown for each day. <strong style="color:#f1f5f9">DH</strong> = doubleheader. @ = away game.</p>' +
+    '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadResearchTable(Number(document.getElementById(\'research-week\').value))">Load</button>' +
+    '<button style="padding:7px 14px;background:#0f172a;color:#94a3b8;font-size:13px;border:1px solid #334155" onclick="refreshResearch()">Refresh</button>' +
+    '</div></div>' +
+    '<p style="color:#94a3b8;font-size:13px;margin-bottom:14px">Two opponents on same day = doubleheader. @ = away. Click column header to sort.</p>' +
     '<div id="research-table"><div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div></div>';
 }
 
-async function loadResearchTable(w) {
-  var el = document.getElementById("research-table");
-  if (!el) return;
+async function loadResearchTable(w, sortBy, sortDir) {
+  if (sortBy === undefined) sortBy = _researchSort;
+  if (sortDir === undefined) sortDir = _researchDir;
+  _researchSort = sortBy; _researchDir = sortDir;
+  var el = document.getElementById("research-table"); if (!el) return;
   el.innerHTML = '<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div>';
-
-  if (!appState.data.seasonStart) {
-    el.innerHTML = '<p style="color:#f59e0b;padding:16px">Set a season start date in Admin first.</p>';
-    return;
-  }
-
-  var filterEl = document.getElementById("research-filter");
-  var sortEl = document.getElementById("research-sort");
-  var filterMode = filterEl ? filterEl.value : "picked";
-  var sortMode = sortEl ? sortEl.value : "name";
-
-  // Get this player's picked teams across ALL weeks (not just current week)
-  var myPickedTeams = [];
-  if (appState.user && !appState.user.isAdmin) {
-    var name = appState.user.name;
-    var weeks = appState.data.weeks || {};
-    for (var wk in weeks) {
-      if (weeks[wk].picks && weeks[wk].picks[name]) {
-        myPickedTeams.push(weeks[wk].picks[name]);
-      }
-    }
-  }
-
+  if (!appState.data.seasonStart) { el.innerHTML = '<p style="color:#f59e0b;padding:16px">Set a season start date in Admin first.</p>'; return; }
   try {
     var start = new Date(appState.data.seasonStart);
-    var weekMonday = new Date(start);
-    weekMonday.setDate(start.getDate() + (w - 1) * 7);
-
+    var weekMonday = new Date(start); weekMonday.setDate(start.getDate() + (w-1)*7);
     var days = [];
-    for (var d = 0; d < 7; d++) {
-      var day = new Date(weekMonday);
-      day.setDate(weekMonday.getDate() + d);
-      days.push(day);
-    }
+    for (var d = 0; d < 7; d++) { var day = new Date(weekMonday); day.setDate(weekMonday.getDate()+d); days.push(day); }
     var dayLabels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-
     function fmt(dt) { return dt.toISOString().split("T")[0]; }
-    var url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=" + fmt(days[0]) + "&endDate=" + fmt(days[6]) + "&gameType=R&fields=dates,date,games,teams,away,home,team,name,status,abstractGameState";
-    var res = await fetch(url);
-    var json = await res.json();
-
+    var url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(days[0])+"&endDate="+fmt(days[6])+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,status,abstractGameState";
+    var res = await fetch(url); var json = await res.json();
     var teamSchedule = {};
-    for (var t = 0; t < MLB_TEAMS.length; t++) {
-      teamSchedule[MLB_TEAMS[t]] = { 0:[], 1:[], 2:[], 3:[], 4:[], 5:[], 6:[] };
-    }
-
-    var dates = json.dates || [];
-    for (var i = 0; i < dates.length; i++) {
-      var dateStr = dates[i].date;
+    MLB_TEAMS.forEach(function(t) { teamSchedule[t]={0:[],1:[],2:[],3:[],4:[],5:[],6:[]}; });
+    (json.dates||[]).forEach(function(de) {
       var dayIdx = -1;
-      for (var di = 0; di < days.length; di++) {
-        if (fmt(days[di]) === dateStr) { dayIdx = di; break; }
-      }
-      if (dayIdx < 0) continue;
-      var games = dates[i].games || [];
-      for (var j = 0; j < games.length; j++) {
-        var g = games[j];
-        var awayName = g.teams && g.teams.away && g.teams.away.team && g.teams.away.team.name;
-        var homeName = g.teams && g.teams.home && g.teams.home.team && g.teams.home.team.name;
-        if (!awayName || !homeName) continue;
-        if (teamSchedule[awayName]) teamSchedule[awayName][dayIdx].push({ opp: homeName, isHome: false });
-        if (teamSchedule[homeName]) teamSchedule[homeName][dayIdx].push({ opp: awayName, isHome: true });
-      }
-    }
-
-    function totalGames(schedule) {
-      var total = 0;
-      for (var d2 = 0; d2 < 7; d2++) total += schedule[d2].length;
-      return total;
-    }
-
-    var abbrevMap = {
-      "Arizona Diamondbacks":"ARI","Atlanta Braves":"ATL","Baltimore Orioles":"BAL",
-      "Boston Red Sox":"BOS","Chicago Cubs":"CHC","Chicago White Sox":"CWS",
-      "Cincinnati Reds":"CIN","Cleveland Guardians":"CLE","Colorado Rockies":"COL",
-      "Detroit Tigers":"DET","Houston Astros":"HOU","Kansas City Royals":"KC",
-      "Los Angeles Angels":"LAA","Los Angeles Dodgers":"LAD","Miami Marlins":"MIA",
-      "Milwaukee Brewers":"MIL","Minnesota Twins":"MIN","New York Mets":"NYM",
-      "New York Yankees":"NYY","Oakland Athletics":"OAK","Philadelphia Phillies":"PHI",
-      "Pittsburgh Pirates":"PIT","San Diego Padres":"SD","San Francisco Giants":"SF",
-      "Seattle Mariners":"SEA","St. Louis Cardinals":"STL","Tampa Bay Rays":"TB",
-      "Texas Rangers":"TEX","Toronto Blue Jays":"TOR","Washington Nationals":"WSH"
-    };
-    function abbrev(name) { return abbrevMap[name] || name.substring(0,3).toUpperCase(); }
-
-    function cellContent(games) {
-      if (games.length === 0) return '<span style="color:#334155">--</span>';
-      if (games.length === 1) {
-        return '<span style="color:#f1f5f9">' + (games[0].isHome?"":"@") + abbrev(games[0].opp) + '</span>';
-      }
-      var parts = [];
-      for (var k = 0; k < games.length; k++) parts.push((games[k].isHome?"":"@") + abbrev(games[k].opp));
-      return '<span style="color:#fbbf24;font-weight:700">DH</span><br><span style="font-size:10px;color:#94a3b8">' + parts.join("/") + '</span>';
-    }
-
-    // Determine which teams to show
-    var teamsToShow = MLB_TEAMS.slice();
-    if (filterMode === "picked" && myPickedTeams.length > 0) {
-      teamsToShow = myPickedTeams.slice();
-    } else if (filterMode === "picked" && myPickedTeams.length === 0) {
-      el.innerHTML = '<div style="color:#94a3b8;padding:16px">You have no picked teams yet. Switch to "All 30 teams" to browse the schedule.</div>';
-      return;
-    }
-
-    // Sort
-    if (sortMode === "name") {
-      teamsToShow.sort();
-    } else {
-      teamsToShow.sort(function(a,b) {
-        return totalGames(teamSchedule[b]) - totalGames(teamSchedule[a]);
+      for (var di=0;di<days.length;di++) { if (fmt(days[di])===de.date){dayIdx=di;break;} }
+      if (dayIdx<0) return;
+      (de.games||[]).forEach(function(g) {
+        var aw=g.teams&&g.teams.away&&g.teams.away.team&&g.teams.away.team.name;
+        var hm=g.teams&&g.teams.home&&g.teams.home.team&&g.teams.home.team.name;
+        if (!aw||!hm) return;
+        if (teamSchedule[aw]) teamSchedule[aw][dayIdx].push({opp:hm,isHome:false});
+        if (teamSchedule[hm]) teamSchedule[hm][dayIdx].push({opp:aw,isHome:true});
       });
+    });
+    function totalGames(s) { var t=0; for(var d2=0;d2<7;d2++) t+=s[d2].length; return t; }
+    function abbrev(name) { return ABBREV[name]||name.substring(0,3).toUpperCase(); }
+    function cellContent(gms) {
+      if (gms.length===0) return '<span style="color:#334155">--</span>';
+      return gms.map(function(g) { return '<span style="color:#f1f5f9">'+(g.isHome?"":"@")+abbrev(g.opp)+'</span>'; }).join("<br>");
     }
 
-    // Current week picks to highlight
-    var weekPicks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
-    var weekPickedTeams = [];
-    for (var pl in weekPicks) weekPickedTeams.push(weekPicks[pl]);
-
-    var dateHeader = '<tr><th>Team</th><th style="text-align:center">Total</th>';
-    for (var dh = 0; dh < 7; dh++) {
-      dateHeader += '<th style="text-align:center">' + dayLabels[dh] + '<br><span style="font-weight:400;color:#64748b">' + (days[dh].getMonth()+1) + '/' + days[dh].getDate() + '</span></th>';
+    // My picks across all weeks (excluding this week)
+    var myPickedTeams = [];
+    if (appState.user&&!appState.user.isAdmin) {
+      var pname=appState.user.name, allWeeks=appState.data.weeks||{};
+      for (var wk in allWeeks) { if (Number(wk)!==w&&allWeeks[wk].picks&&allWeeks[wk].picks[pname]) myPickedTeams.push(allWeeks[wk].picks[pname]); }
     }
-    dateHeader += '</tr>';
-
-    var teamRows = "";
-    for (var ti = 0; ti < teamsToShow.length; ti++) {
-      var team = teamsToShow[ti];
-      var sched = teamSchedule[team];
-      if (!sched) continue;
-      var total = totalGames(sched);
-      var isPickedThisWeek = weekPickedTeams.indexOf(team) >= 0;
-      var isMyPickThisWeek = appState.user && !appState.user.isAdmin && weekPicks[appState.user.name] === team;
-      var rowStyle = isMyPickThisWeek ? 'background:#16a34a22;' : isPickedThisWeek ? 'background:#2563eb22;' : '';
-      var totalColor = total >= 7 ? '#16a34a' : total >= 5 ? '#fbbf24' : '#ef4444';
-      var badge = isMyPickThisWeek ? ' <span style="font-size:10px;background:#16a34a;padding:1px 5px;border-radius:4px;color:#fff">my pick</span>' :
-                  isPickedThisWeek ? ' <span style="font-size:10px;background:#2563eb;padding:1px 5px;border-radius:4px;color:#fff">picked</span>' : '';
-      teamRows += '<tr style="' + rowStyle + '">' +
-        '<td style="font-weight:600;white-space:nowrap">' + team + badge + '</td>' +
-        '<td style="text-align:center;font-weight:800;color:' + totalColor + '">' + total + '</td>';
-      for (var dc = 0; dc < 7; dc++) {
-        teamRows += '<td style="text-align:center;font-size:12px;line-height:1.4">' + cellContent(sched[dc]) + '</td>';
-      }
-      teamRows += '</tr>';
+    // This week's pick
+    var myThisWeekPick = null;
+    if (appState.user&&!appState.user.isAdmin) {
+      var wp=(appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)||{};
+      myThisWeekPick = wp[appState.user.name]||null;
     }
 
-    var weekDates = fmt(days[0]) + ' to ' + fmt(days[6]);
-    el.innerHTML =
-      '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px">Week ' + w + ': ' + weekDates + '</div>' +
-      '<div style="font-size:12px;margin-bottom:10px;display:flex;gap:16px;flex-wrap:wrap">' +
+    var teamList = MLB_TEAMS.map(function(team) { return {name:team,sched:teamSchedule[team],total:totalGames(teamSchedule[team])}; });
+    teamList.sort(function(a,b) {
+      var cmp = sortBy==="games" ? b.total-a.total : (a.name<b.name?-1:a.name>b.name?1:0);
+      return sortDir==="asc"?-cmp:cmp;
+    });
+
+    function sortArrow(col) {
+      if (sortBy!==col) return ' <span style="color:#475569">&#8597;</span>';
+      return sortDir==="desc"?' <span style="color:#38bdf8">&#8595;</span>':' <span style="color:#38bdf8">&#8593;</span>';
+    }
+    function thClick(col) {
+      var nd=(sortBy===col&&sortDir==="desc")?"asc":"desc";
+      return 'onclick="loadResearchTable('+w+',\''+col+'\',\''+nd+'\')"';
+    }
+    var ths='style="cursor:pointer;user-select:none;white-space:nowrap"';
+
+    var hdr='<tr><th '+ths+' '+thClick("name")+'>Team'+sortArrow("name")+'</th><th '+ths+' '+thClick("games")+' style="text-align:center;cursor:pointer;user-select:none">Total'+sortArrow("games")+'</th>';
+    for (var dh=0;dh<7;dh++) hdr+='<th style="text-align:center">'+dayLabels[dh]+'<br><span style="font-weight:400;color:#64748b">'+(days[dh].getMonth()+1)+'/'+days[dh].getDate()+'</span></th>';
+    hdr+='</tr>';
+
+    var teamRows="";
+    teamList.forEach(function(item) {
+      var isThisWeek=item.name===myThisWeekPick;
+      var alreadyUsed=!isThisWeek&&myPickedTeams.indexOf(item.name)>=0;
+      var rowStyle=isThisWeek?'background:#16a34a33;outline:2px solid #16a34a;outline-offset:-2px;':alreadyUsed?'background:#7c3aed22;':'';
+      var badge=isThisWeek?' <span style="font-size:10px;background:#16a34a;padding:1px 5px;border-radius:4px;color:#fff">my pick</span>':alreadyUsed?' <span style="font-size:10px;background:#7c3aed;padding:1px 5px;border-radius:4px;color:#fff">used</span>':'';
+      var tc=item.total>=7?"#16a34a":item.total>=5?"#fbbf24":"#ef4444";
+      teamRows+='<tr style="'+rowStyle+'">' +
+        '<td style="font-weight:600;white-space:nowrap"><span class="hide-mobile">'+item.name+'</span><span class="show-mobile">'+abbrev(item.name)+'</span>'+badge+'</td>' +
+        '<td style="text-align:center;font-weight:800;color:'+tc+'">'+item.total+'</td>';
+      for (var dc=0;dc<7;dc++) teamRows+='<td style="text-align:center;font-size:12px;line-height:1.4">'+cellContent(item.sched[dc])+'</td>';
+      teamRows+='</tr>';
+    });
+
+    el.innerHTML='<div style="color:#94a3b8;font-size:12px;margin-bottom:10px">Week '+w+': '+fmt(days[0])+' to '+fmt(days[6])+'</div>' +
+      '<div style="font-size:12px;margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap">' +
       '<span style="color:#16a34a;font-weight:700">7+ games</span>' +
       '<span style="color:#fbbf24;font-weight:700">5-6 games</span>' +
       '<span style="color:#ef4444;font-weight:700">Under 5</span>' +
-      '<span style="color:#fbbf24;font-weight:700">DH = Doubleheader</span>' +
-      '<span style="color:#94a3b8">@ = Away</span></div>' +
-      '<div class="table-wrap"><table>' +
-      '<thead>' + dateHeader + '</thead>' +
-      '<tbody>' + teamRows + '</tbody></table></div>';
-
-  } catch(e) {
-    el.innerHTML = '<p style="color:#ef4444;padding:16px">Failed to load schedule. Please try again.</p>';
-  }
+      '<span style="color:#94a3b8">@ = Away | Two opponents = Doubleheader</span>' +
+      '<span style="background:#16a34a33;border:1px solid #16a34a;padding:1px 6px;border-radius:4px;color:#86efac;font-size:11px">my pick = this week</span>' +
+      '<span style="background:#7c3aed22;border:1px solid #7c3aed;padding:1px 6px;border-radius:4px;color:#c4b5fd;font-size:11px">used = earlier this season</span></div>' +
+      '<div class="table-wrap"><table><thead>'+hdr+'</thead><tbody>'+teamRows+'</tbody></table></div>';
+  } catch(e) { el.innerHTML='<p style="color:#ef4444;padding:16px">Failed to load schedule. Please try again.</p>'; }
 }
+window.loadResearchTable = loadResearchTable;
 window.refreshResearch = function() {
-  var w = Number(document.getElementById("research-week").value);
+  var w=Number(document.getElementById("research-week").value);
   delete scheduleCache[w];
   loadResearchTable(w);
 };
-window.loadResearchTable = loadResearchTable;
 
 // BOOT
 onSnapshot(POOL_DOC, function(snap) {
