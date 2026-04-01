@@ -6,33 +6,63 @@
 <title>Baseball Run Pool</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,sans-serif;background:#0f172a;color:#f1f5f9;min-height:100vh}
-button{cursor:pointer;border:none;border-radius:8px;font-weight:700;transition:opacity .15s}
+body{font-family:system-ui,sans-serif;background:#0f172a;color:#f1f5f9;min-height:100vh;-webkit-text-size-adjust:100%}
+button{cursor:pointer;border:none;border-radius:8px;font-weight:700;transition:opacity .15s;-webkit-tap-highlight-color:transparent}
 button:hover{opacity:.85}
 button:disabled{opacity:.4;cursor:not-allowed}
-input,select{background:#0f172a;color:#f1f5f9;border:1px solid #334155;border-radius:8px;padding:9px 12px;font-size:14px;width:100%}
+input,select{background:#0f172a;color:#f1f5f9;border:1px solid #334155;border-radius:8px;padding:9px 12px;font-size:16px;width:100%}
 input:focus,select:focus{outline:2px solid #2563eb}
-.card{background:#1e293b;border-radius:12px;padding:20px}
-.tab-btn{padding:8px 16px;border-radius:8px;font-weight:700;font-size:14px;background:#1e293b;color:#f1f5f9}
+.card{background:#1e293b;border-radius:12px;padding:16px}
+.tab-btn{padding:8px 12px;border-radius:8px;font-weight:700;font-size:13px;background:#1e293b;color:#f1f5f9}
 .tab-btn.active{background:#2563eb}
-.flash{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:12px 28px;border-radius:10px;font-weight:700;z-index:999;box-shadow:0 4px 20px #0008}
+.flash{position:fixed;top:16px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:12px 20px;border-radius:10px;font-weight:700;z-index:999;box-shadow:0 4px 20px #0008;font-size:14px;width:90%;max-width:400px;text-align:center}
 table{width:100%;border-collapse:collapse}
-th{background:#0f172a;padding:11px 14px;text-align:left;font-size:13px;color:#94a3b8;font-weight:700}
-td{padding:12px 14px;border-top:1px solid #0f172a;font-size:14px}
+th{background:#0f172a;padding:9px 10px;text-align:left;font-size:12px;color:#94a3b8;font-weight:700}
+td{padding:10px;border-top:1px solid #0f172a;font-size:13px}
 tr:nth-child(even) td{background:#1a2744}
 .spinner{display:inline-block;width:18px;height:18px;border:3px solid #334155;border-top-color:#38bdf8;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
-nav{background:#1e293b;border-bottom:2px solid #2563eb;padding:12px 20px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.nav-title{font-weight:800;font-size:20px;color:#38bdf8;margin-right:6px}
-.nav-btn{padding:8px 14px;border-radius:6px;background:#1e293b;color:#f1f5f9;font-size:13px;font-weight:700;border:1px solid #334155}
+
+/* Nav */
+nav{background:#1e293b;border-bottom:2px solid #2563eb;padding:0;position:sticky;top:0;z-index:100}
+.nav-top{display:flex;align-items:center;padding:10px 14px;gap:8px}
+.nav-title{font-weight:800;font-size:18px;color:#38bdf8;flex:1}
+.nav-hamburger{background:none;border:1px solid #334155;color:#f1f5f9;padding:6px 10px;border-radius:6px;font-size:18px;line-height:1}
+.nav-links{display:none;flex-direction:column;padding:8px 14px 12px;gap:6px;border-top:1px solid #1e3a5f}
+.nav-links.open{display:flex}
+.nav-btn{padding:10px 14px;border-radius:6px;background:#0f172a;color:#f1f5f9;font-size:14px;font-weight:700;border:1px solid #334155;text-align:left;width:100%}
 .nav-btn.active{background:#2563eb;border-color:#2563eb}
-.logout-btn{margin-left:auto;background:#dc2626;color:#fff;padding:8px 14px;border-radius:6px;font-size:13px}
-#app{max-width:1020px;margin:0 auto;padding:16px}
-.team-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));gap:8px}
-.team-btn{padding:9px 12px;border-radius:8px;text-align:left;font-size:13px;font-weight:600;background:#0f172a;color:#f1f5f9;border-left:3px solid #2563eb}
+.logout-btn{background:#dc2626;color:#fff;padding:10px 14px;border-radius:6px;font-size:14px;font-weight:700;text-align:left;width:100%;border:none}
+
+/* App container */
+#app{max-width:1020px;margin:0 auto;padding:12px}
+
+/* Team grid - 2 columns on mobile */
+.team-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+@media(min-width:500px){.team-grid{grid-template-columns:repeat(auto-fill,minmax(195px,1fr))}}
+.team-btn{padding:10px 12px;border-radius:8px;text-align:left;font-size:13px;font-weight:600;background:#0f172a;color:#f1f5f9;border-left:3px solid #2563eb;width:100%}
 .team-btn.taken{background:#1e1e2e;color:#475569;border-left-color:#ef4444}
 .team-btn.used{background:#1e1e2e;color:#475569;border-left-color:#7c3aed}
 .team-btn:disabled{cursor:not-allowed}
+
+/* Responsive tables */
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px}
+
+/* Admin tabs scroll horizontally on mobile */
+.admin-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.admin-tabs::-webkit-scrollbar{display:none}
+
+/* Stack flex rows on mobile */
+.flex-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+
+/* Make cards full width on mobile */
+@media(max-width:600px){
+  .card{padding:14px}
+  td{padding:8px 6px;font-size:12px}
+  th{padding:8px 6px;font-size:11px}
+  h2{font-size:18px}
+  h3{font-size:15px}
+}
 </style>
 </head>
 <body>
@@ -325,15 +355,26 @@ function calcSeasonStandings() {
 function renderNav() {
   var user = appState.user, view = appState.view;
   function nb(v, label) {
-    return '<button class="nav-btn' + (view===v?' active':'') + '" onclick="setView(\'' + v + '\')">' + label + '</button>';
+    return '<button class="nav-btn' + (view===v?' active':'') + '" onclick="setView(\'' + v + '\');toggleNav(false)">' + label + '</button>';
   }
   document.getElementById("nav").innerHTML =
+    '<div class="nav-top">' +
     '<span class="nav-title">Baseball Run Pool</span>' +
+    (user ? '<span style="color:#94a3b8;font-size:12px;margin-right:8px">' + user.name + '</span>' : '') +
+    '<button class="nav-hamburger" onclick="toggleNav()">&#9776;</button></div>' +
+    '<div class="nav-links" id="nav-links">' +
     nb("home","Home") + nb("draft","Draft Board") + nb("standings","Standings") +
     (user && user.isAdmin ? nb("admin","Admin") : "") +
     (user && !user.isAdmin ? nb("player","My Picks") : "") +
-    (user ? '<button class="logout-btn" onclick="doLogout()">Logout (' + user.name + ')</button>' : "");
+    (user ? '<button class="logout-btn" onclick="doLogout()">Logout</button>' : "") +
+    '</div>';
 }
+window.toggleNav = function(forceClose) {
+  var el = document.getElementById("nav-links");
+  if (!el) return;
+  if (forceClose === false) { el.classList.remove("open"); return; }
+  el.classList.toggle("open");
+};
 
 window.setView = function(v) { appState.view = v; render(); };
 window.doLogout = function() { appState.user = null; appState.view = "home"; render(); };
@@ -398,7 +439,7 @@ function renderAdmin() {
     btns += '<button class="tab-btn' + (i===0?' active':'') + '" id="atab-' + tabKeys[i] + '" onclick="adminTab(\'' + tabKeys[i] + '\')">' + tabLabels[tabKeys[i]] + '</button>';
   }
   return '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin-bottom:16px">Commissioner Panel</h2>' +
-    '<div style="display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap">' + btns + '</div>' +
+    '<div class="admin-tabs" style="margin-bottom:20px">' + btns + '</div>' +
     '<div id="admin-panel">' + renderAdminSetup() + '</div>';
 }
 window.adminTab = function(t) {
@@ -867,7 +908,7 @@ async function loadDraftTable(w) {
       '<td style="text-align:right;font-weight:700;color:#fbbf24">' + (r!==null?r:"--") + '</td></tr>';
   }
   var windowInfo = win ? '<div style="color:#94a3b8;font-size:12px;margin-bottom:12px">Draft opens: ' + formatET(win.openET) + ' ET | Deadline: ' + formatET(win.closeET) + ' ET</div>' : '';
-  el.innerHTML = windowInfo + '<div class="card" style="padding:0;overflow:hidden"><table>' +
+  el.innerHTML = windowInfo + '<div class="table-wrap"><table>' +
     '<thead><tr><th>Pick #</th><th>Player</th><th>Team</th><th style="text-align:center">Games</th><th style="text-align:right">Runs</th></tr></thead>' +
     '<tbody>' + rows + '</tbody></table></div>';
 }
@@ -930,7 +971,7 @@ async function loadStandingsWeek(w) {
     '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="reloadWeekStand()">Load</button>' +
     '<span style="color:#94a3b8;font-size:12px;margin-left:8px">Live runs auto-fetched</span></div>' +
     statusBanner +
-    '<div class="card" style="padding:0;overflow:hidden"><table>' +
+    '<div class="table-wrap"><table>' +
     '<thead><tr><th>Rank</th><th>Player</th><th>Team</th><th style="text-align:right">Runs</th><th style="text-align:right">Winnings</th></tr></thead>' +
     '<tbody>' + trs + '</tbody></table></div>';
 }
