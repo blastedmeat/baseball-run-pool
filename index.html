@@ -363,7 +363,7 @@ function renderNav() {
     (user ? '<span style="color:#94a3b8;font-size:12px;margin-right:8px">' + user.name + '</span>' : '') +
     '<button class="nav-hamburger" onclick="toggleNav()">&#9776;</button></div>' +
     '<div class="nav-links" id="nav-links">' +
-    nb("home","Home") + nb("draft","Draft Board") + nb("standings","Standings") +
+    nb("home","Home") + nb("draft","Draft Board") + nb("standings","Standings") + nb("research","Research") +
     (user && user.isAdmin ? nb("admin","Admin") : "") +
     (user && !user.isAdmin ? nb("player","My Picks") : "") +
     (user ? '<button class="logout-btn" onclick="doLogout()">Logout</button>' : "") +
@@ -387,6 +387,7 @@ function render() {
   if (appState.view === "admin")     app.innerHTML = renderAdmin();
   if (appState.view === "player")    app.innerHTML = renderPlayer();
   if (appState.view === "standings") { app.innerHTML = renderStandingsShell(); loadStandingsWeek(currentWeek()); }
+  if (appState.view === "research")  { app.innerHTML = renderResearchShell(); loadResearchTable(currentWeek()); }
   if (appState.view === "draft")     { app.innerHTML = renderDraftShell(); loadDraftTable(currentWeek()); }
 }
 
@@ -1002,6 +1003,167 @@ window.standTab = function(t) {
   }
 };
 window.reloadWeekStand = function() { loadStandingsWeek(Number(document.getElementById("week-stand").value)); };
+
+// RESEARCH
+function renderResearchShell() {
+  var w = currentWeek();
+  return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">' +
+    '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin:0">Schedule Research</h2>' +
+    '<div style="margin-left:auto;display:flex;gap:8px;align-items:center">' +
+    '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
+    '<input type="number" id="research-week" value="' + w + '" min="1" max="' + (appState.data.weekCount||26) + '" style="width:60px;font-size:14px"/>' +
+    '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadResearchTable(Number(document.getElementById(\'research-week\').value))">Load</button></div></div>' +
+    '<p style="color:#94a3b8;font-size:13px;margin-bottom:14px">Opponent shown for each day. <strong style="color:#f1f5f9">DH</strong> = doubleheader. @ = away game.</p>' +
+    '<div id="research-table"><div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div></div>';
+}
+
+async function loadResearchTable(w) {
+  var el = document.getElementById("research-table");
+  if (!el) return;
+  el.innerHTML = '<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div>';
+
+  if (!appState.data.seasonStart) {
+    el.innerHTML = '<p style="color:#f59e0b;padding:16px">Set a season start date in Admin first.</p>';
+    return;
+  }
+
+  try {
+    var start = new Date(appState.data.seasonStart);
+    var weekMonday = new Date(start);
+    weekMonday.setDate(start.getDate() + (w - 1) * 7);
+
+    // Build date range Mon-Sun
+    var days = [];
+    for (var d = 0; d < 7; d++) {
+      var day = new Date(weekMonday);
+      day.setDate(weekMonday.getDate() + d);
+      days.push(day);
+    }
+    var dayLabels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
+    function fmt(dt) { return dt.toISOString().split("T")[0]; }
+    var url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=" + fmt(days[0]) + "&endDate=" + fmt(days[6]) + "&gameType=R&fields=dates,date,games,teams,away,home,team,name,status,abstractGameState";
+    var res = await fetch(url);
+    var json = await res.json();
+
+    // Build lookup: teamName -> { dayIndex -> [{opponent, isHome}] }
+    var teamSchedule = {};
+    for (var t = 0; t < MLB_TEAMS.length; t++) {
+      teamSchedule[MLB_TEAMS[t]] = { 0:[], 1:[], 2:[], 3:[], 4:[], 5:[], 6:[] };
+    }
+
+    var dates = json.dates || [];
+    for (var i = 0; i < dates.length; i++) {
+      var dateStr = dates[i].date;
+      // Find which day index this is
+      var dayIdx = -1;
+      for (var di = 0; di < days.length; di++) {
+        if (fmt(days[di]) === dateStr) { dayIdx = di; break; }
+      }
+      if (dayIdx < 0) continue;
+
+      var games = dates[i].games || [];
+      for (var j = 0; j < games.length; j++) {
+        var g = games[j];
+        var awayName = g.teams && g.teams.away && g.teams.away.team && g.teams.away.team.name;
+        var homeName = g.teams && g.teams.home && g.teams.home.team && g.teams.home.team.name;
+        if (!awayName || !homeName) continue;
+        if (teamSchedule[awayName]) teamSchedule[awayName][dayIdx].push({ opp: homeName, isHome: false });
+        if (teamSchedule[homeName]) teamSchedule[homeName][dayIdx].push({ opp: awayName, isHome: true });
+      }
+    }
+
+    // Count total games per team
+    function totalGames(schedule) {
+      var total = 0;
+      for (var d2 = 0; d2 < 7; d2++) total += schedule[d2].length;
+      return total;
+    }
+
+    // Format a day cell — blank if no game, opponent abbrev if 1 game, DH if 2
+    function abbrev(name) {
+      // Make a short 3-letter abbreviation from team name
+      var map = {
+        "Arizona Diamondbacks":"ARI","Atlanta Braves":"ATL","Baltimore Orioles":"BAL",
+        "Boston Red Sox":"BOS","Chicago Cubs":"CHC","Chicago White Sox":"CWS",
+        "Cincinnati Reds":"CIN","Cleveland Guardians":"CLE","Colorado Rockies":"COL",
+        "Detroit Tigers":"DET","Houston Astros":"HOU","Kansas City Royals":"KC",
+        "Los Angeles Angels":"LAA","Los Angeles Dodgers":"LAD","Miami Marlins":"MIA",
+        "Milwaukee Brewers":"MIL","Minnesota Twins":"MIN","New York Mets":"NYM",
+        "New York Yankees":"NYY","Oakland Athletics":"OAK","Philadelphia Phillies":"PHI",
+        "Pittsburgh Pirates":"PIT","San Diego Padres":"SD","San Francisco Giants":"SF",
+        "Seattle Mariners":"SEA","St. Louis Cardinals":"STL","Tampa Bay Rays":"TB",
+        "Texas Rangers":"TEX","Toronto Blue Jays":"TOR","Washington Nationals":"WSH"
+      };
+      return map[name] || name.substring(0,3).toUpperCase();
+    }
+
+    function cellContent(games) {
+      if (games.length === 0) return '<span style="color:#334155">--</span>';
+      if (games.length === 1) {
+        var prefix = games[0].isHome ? "" : "@";
+        return '<span style="color:#f1f5f9">' + prefix + abbrev(games[0].opp) + '</span>';
+      }
+      // Doubleheader
+      var parts = [];
+      for (var k = 0; k < games.length; k++) {
+        parts.push((games[k].isHome?"":"@") + abbrev(games[k].opp));
+      }
+      return '<span style="color:#fbbf24;font-weight:700">DH</span><br><span style="font-size:10px;color:#94a3b8">' + parts.join("/") + '</span>';
+    }
+
+    // Sort teams alphabetically
+    var sortedTeams = MLB_TEAMS.slice().sort();
+
+    // Build picked teams set for this week so we can highlight them
+    var picks = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks) || {};
+    var pickedTeams = [];
+    for (var pl in picks) pickedTeams.push(picks[pl]);
+
+    // Build date header row
+    var dateHeader = '<tr><th>Team</th><th style="text-align:center">Total</th>';
+    for (var dh = 0; dh < 7; dh++) {
+      dateHeader += '<th style="text-align:center">' + dayLabels[dh] + '<br><span style="font-weight:400;color:#64748b">' + (days[dh].getMonth()+1) + '/' + days[dh].getDate() + '</span></th>';
+    }
+    dateHeader += '</tr>';
+
+    // Build team rows
+    var teamRows = "";
+    for (var ti = 0; ti < sortedTeams.length; ti++) {
+      var team = sortedTeams[ti];
+      var sched = teamSchedule[team];
+      var total = totalGames(sched);
+      var isPicked = pickedTeams.indexOf(team) >= 0;
+      var rowStyle = isPicked ? 'background:#2563eb22;' : '';
+      var nameStyle = isPicked ? 'color:#38bdf8;font-weight:700' : 'font-weight:600';
+      var totalColor = total >= 7 ? '#16a34a' : total >= 5 ? '#fbbf24' : '#ef4444';
+      teamRows += '<tr style="' + rowStyle + '">' +
+        '<td style="' + nameStyle + ';white-space:nowrap">' + team + (isPicked ? ' <span style="font-size:10px;background:#2563eb;padding:1px 5px;border-radius:4px;color:#fff">picked</span>' : '') + '</td>' +
+        '<td style="text-align:center;font-weight:800;color:' + totalColor + '">' + total + '</td>';
+      for (var dc = 0; dc < 7; dc++) {
+        teamRows += '<td style="text-align:center;font-size:12px;line-height:1.4">' + cellContent(sched[dc]) + '</td>';
+      }
+      teamRows += '</tr>';
+    }
+
+    var weekDates = fmt(days[0]) + ' to ' + fmt(days[6]);
+    el.innerHTML =
+      '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px">Week ' + w + ': ' + weekDates + '</div>' +
+      '<div style="font-size:12px;margin-bottom:10px;display:flex;gap:16px;flex-wrap:wrap">' +
+      '<span style="color:#16a34a;font-weight:700">7+ games</span>' +
+      '<span style="color:#fbbf24;font-weight:700">5-6 games</span>' +
+      '<span style="color:#ef4444;font-weight:700">Under 5 games</span>' +
+      '<span style="color:#fbbf24;font-weight:700">DH = Doubleheader</span>' +
+      '<span style="color:#94a3b8">@ = Away game</span></div>' +
+      '<div class="table-wrap"><table>' +
+      '<thead>' + dateHeader + '</thead>' +
+      '<tbody>' + teamRows + '</tbody></table></div>';
+
+  } catch(e) {
+    el.innerHTML = '<p style="color:#ef4444;padding:16px">Failed to load schedule. Please try again.</p>';
+  }
+}
+window.loadResearchTable = loadResearchTable;
 
 // BOOT
 onSnapshot(POOL_DOC, function(snap) {
