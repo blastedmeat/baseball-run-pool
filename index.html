@@ -25,8 +25,6 @@ tr:nth-child(even) td{background:#1a2744}
 .table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px}
 .admin-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .admin-tabs::-webkit-scrollbar{display:none}
-
-/* Nav */
 nav{background:#1e293b;border-bottom:2px solid #2563eb;position:sticky;top:0;z-index:100}
 .nav-title{font-weight:800;font-size:18px;color:#38bdf8}
 .nav-desktop{display:flex;align-items:center;gap:8px;padding:10px 16px;flex-wrap:wrap}
@@ -39,7 +37,6 @@ nav{background:#1e293b;border-bottom:2px solid #2563eb;position:sticky;top:0;z-i
 .nav-links.open{display:flex}
 .nav-links .nav-btn{width:100%;text-align:left;padding:10px 14px}
 .nav-links .logout-btn{width:100%;text-align:left;padding:10px 14px;margin-left:0}
-
 #app{max-width:1020px;margin:0 auto;padding:12px}
 .team-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 @media(min-width:500px){.team-grid{grid-template-columns:repeat(auto-fill,minmax(195px,1fr))}}
@@ -47,10 +44,8 @@ nav{background:#1e293b;border-bottom:2px solid #2563eb;position:sticky;top:0;z-i
 .team-btn.taken{background:#1e1e2e;color:#475569;border-left-color:#ef4444}
 .team-btn.used{background:#1e1e2e;color:#475569;border-left-color:#7c3aed}
 .team-btn:disabled{cursor:not-allowed}
-
 .hide-mobile{display:inline}
 .show-mobile{display:none}
-
 @media(max-width:900px){
   .nav-desktop{display:none}
   .nav-top{display:flex}
@@ -68,7 +63,6 @@ nav{background:#1e293b;border-bottom:2px solid #2563eb;position:sticky;top:0;z-i
 <nav id="nav"></nav>
 <div id="flash-area"></div>
 <div id="app"><div style="text-align:center;padding:60px;color:#94a3b8"><span class="spinner"></span> Loading...</div></div>
-
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -103,7 +97,7 @@ var ABBREV = {
   "Detroit Tigers":"DET","Houston Astros":"HOU","Kansas City Royals":"KC",
   "Los Angeles Angels":"LAA","Los Angeles Dodgers":"LAD","Miami Marlins":"MIA",
   "Milwaukee Brewers":"MIL","Minnesota Twins":"MIN","New York Mets":"NYM",
-  "New York Yankees":"NYY",  "Athletics":"ATH","Philadelphia Phillies":"PHI",
+  "New York Yankees":"NYY","Athletics":"ATH","Philadelphia Phillies":"PHI",
   "Pittsburgh Pirates":"PIT","San Diego Padres":"SD","San Francisco Giants":"SF",
   "Seattle Mariners":"SEA","St. Louis Cardinals":"STL","Tampa Bay Rays":"TB",
   "Texas Rangers":"TEX","Toronto Blue Jays":"TOR","Washington Nationals":"WSH"
@@ -116,7 +110,9 @@ var orderState = [];
 var _researchSort = "games";
 var _researchDir = "desc";
 
-function defaultData() { return { seasonStart:"", weekCount:26, playerCount:8, rotation:[0,5,4,2,7,1,3,6], players:[], weeks:{} }; }
+function defaultData() {
+  return { seasonStart:"", weekCount:26, playerCount:8, rotation:[0,5,4,2,7,1,3,6], players:[], weeks:{} };
+}
 
 async function saveData(d) { appState.data = d; await setDoc(POOL_DOC, d); }
 
@@ -135,7 +131,7 @@ function currentWeek() {
 }
 
 function getDraftPosition(playerIndex, weekNum) {
-  var rotation = appState.data.rotation || [0,5,4,2,7,1,3,6];
+  var rotation = appState.data.rotation || ROTATION;
   var n = rotation.length;
   var w = (weekNum - 1) % n;
   return (rotation[w] + playerIndex) % n;
@@ -176,6 +172,10 @@ function takenTeamsThisWeek(weekNum) {
   var picks = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].picks) || {};
   for (var p in picks) taken.push(picks[p]);
   return taken;
+}
+
+function playerHasPassword(player) {
+  return !!(player && player.password && player.password.trim() !== "");
 }
 
 // TIMING
@@ -295,7 +295,7 @@ function calcWeekStandings(weekNum, overrideRuns) {
     if (team !== null) playerRuns = (runs[team] !== undefined && runs[team] !== null) ? runs[team] : 0;
     rows.push({ name: p.name, team: team, runs: playerRuns, payout: null });
   }
-  rows.sort(function(a,b) { return ((a.runs!==null)?a.runs:-9999) > ((b.runs!==null)?b.runs:-9999) ? -1 : 1; });
+  rows.sort(function(a,b) { return ((b.runs!==null?b.runs:-9999)) - ((a.runs!==null?a.runs:-9999)); });
   var withPicks = rows.filter(function(r) { return r.runs !== null; });
   if (withPicks.length > 0) {
     var winner = withPicks[0];
@@ -340,20 +340,17 @@ async function fetchRunsFromAPI(w) {
     var url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=" + fmt(ws) + "&endDate=" + fmt(we) + "&gameType=R&fields=dates,games,teams,away,home,team,name,score,status,abstractGameState,detailedState";
     var res = await fetch(url); var json = await res.json();
     var totals = {};
-    var dates = json.dates || [];
-    for (var i = 0; i < dates.length; i++) {
-      var games = dates[i].games || [];
-      for (var j = 0; j < games.length; j++) {
-        var g = games[j];
+    (json.dates||[]).forEach(function(de) {
+      (de.games||[]).forEach(function(g) {
         var detail = (g.status && g.status.detailedState) ? g.status.detailedState.toLowerCase() : "";
         var isFinal = g.status && g.status.abstractGameState === "Final";
         var isSusp = detail.indexOf("suspended") >= 0 || detail.indexOf("resume") >= 0;
-        if (!isFinal && !isSusp) continue;
+        if (!isFinal && !isSusp) return;
         var aw = g.teams && g.teams.away; var hm = g.teams && g.teams.home;
         if (aw && aw.team && aw.team.name) totals[aw.team.name] = (totals[aw.team.name]||0) + (aw.score||0);
         if (hm && hm.team && hm.team.name) totals[hm.team.name] = (totals[hm.team.name]||0) + (hm.score||0);
-      }
-    }
+      });
+    });
     return totals;
   } catch(e) { return {}; }
 }
@@ -369,11 +366,8 @@ async function fetchScheduleFromAPI(w) {
     var url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=" + fmt(ws) + "&endDate=" + fmt(we) + "&gameType=R&fields=dates,games,teams,away,home,team,name,status,abstractGameState,detailedState";
     var res = await fetch(url); var json = await res.json();
     var counts = {};
-    var dates = json.dates || [];
-    for (var i = 0; i < dates.length; i++) {
-      var games = dates[i].games || [];
-      for (var j = 0; j < games.length; j++) {
-        var g = games[j];
+    (json.dates||[]).forEach(function(de) {
+      (de.games||[]).forEach(function(g) {
         var detail = (g.status && g.status.detailedState) ? g.status.detailedState.toLowerCase() : "";
         var isSusp = detail.indexOf("suspended") >= 0 || detail.indexOf("resume") >= 0;
         var val = isSusp ? 0.5 : 1;
@@ -381,8 +375,8 @@ async function fetchScheduleFromAPI(w) {
         var hm = g.teams && g.teams.home && g.teams.home.team && g.teams.home.team.name;
         if (aw) counts[aw] = (counts[aw]||0) + val;
         if (hm) counts[hm] = (counts[hm]||0) + val;
-      }
-    }
+      });
+    });
     var formatted = {};
     for (var team in counts) formatted[team] = (counts[team] % 1 === 0) ? counts[team] : counts[team].toFixed(1);
     scheduleCache[w] = formatted;
@@ -442,26 +436,19 @@ function renderHome() {
       '<option value="">-- Select your name --</option>' + opts + '</select>' +
       '<div id="player-pw-area"></div>' +
       '<div id="player-pw-error" style="color:#ef4444;font-size:13px;margin-top:8px"></div>' +
-      '<button style="width:100%;padding:11px;background:#2563eb;color:#fff;font-size:16px;margin-top:8px" onclick="loginPlayer()">Enter Pool</button>') + '</div>' +
+      '<button style="width:100%;padding:11px;background:#2563eb;color:#fff;font-size:16px;margin-top:8px" onclick="loginPlayer()">Enter Pool</button>') +
+    '</div>' +
     '<div id="home-admin-panel" style="display:none">' +
     '<input type="password" id="admin-pw" placeholder="Commissioner password" style="margin-bottom:8px" onkeydown="if(event.key===\'Enter\')loginAdmin()"/>' +
     '<div id="pw-error" style="color:#ef4444;font-size:13px;margin-bottom:8px"></div>' +
     '<button style="width:100%;padding:11px;background:#7c3aed;color:#fff;font-size:16px" onclick="loginAdmin()">Login as Admin</button></div></div>';
 }
+
 window.homeTab = function(t) {
   document.getElementById("home-player-panel").style.display = t==="player"?"block":"none";
   document.getElementById("home-admin-panel").style.display  = t==="admin"?"block":"none";
   document.getElementById("tab-player").classList.toggle("active",t==="player");
   document.getElementById("tab-admin").classList.toggle("active",t==="admin");
-};
-window.loginPlayer = function() {
-  var el = document.getElementById("player-select"); if (!el||!el.value) return;
-  appState.user = { name:el.value, isAdmin:false }; appState.view = "player"; render();
-};
-window.loginAdmin = function() {
-  var el = document.getElementById("admin-pw");
-  if (el && el.value===ADMIN_PW) { appState.user={name:"Commissioner",isAdmin:true}; appState.view="admin"; render(); }
-  else document.getElementById("pw-error").textContent = "Incorrect password.";
 };
 
 window.checkPlayerPw = function() {
@@ -473,27 +460,58 @@ window.checkPlayerPw = function() {
   var name = sel.value;
   var player = (appState.data.players||[]).find(function(p) { return p.name === name; });
   if (!player) { area.innerHTML = ""; return; }
-  var hasPw = !!(player.password && player.password.trim() !== "");
-  if (hasPw) {
-    area.innerHTML =
-      '<input type="password" id="player-pw" placeholder="Your password" style="margin-bottom:10px" onkeydown="if(event.key===\'Enter\')loginPlayer()"/>';
+  if (playerHasPassword(player)) {
+    area.innerHTML = '<input type="password" id="player-pw" placeholder="Your password" style="margin-bottom:10px" onkeydown="if(event.key===\'Enter\')loginPlayer()"/>';
   } else {
     area.innerHTML =
       '<div style="background:#2563eb22;border:1px solid #2563eb;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#94a3b8">' +
-      'Welcome <strong style="color:#f1f5f9">' + name + '</strong>! Set your password for future logins.</div>' +
+      'Welcome <strong style="color:#f1f5f9">' + name + '</strong>! Please set a password for future logins.</div>' +
       '<input type="password" id="player-pw-new" placeholder="Choose a password" style="margin-bottom:10px" onkeydown="if(event.key===\'Enter\')loginPlayer()"/>' +
       '<input type="password" id="player-pw-confirm" placeholder="Confirm password" style="margin-bottom:10px" onkeydown="if(event.key===\'Enter\')loginPlayer()"/>';
   }
 };
-    area.innerHTML =
-      '<div style="background:#2563eb22;border:1px solid #2563eb;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#94a3b8">' +
-      'Welcome <strong style="color:#f1f5f9">' + name + '</strong>! Set your password for future logins.</div>' +
-      '<input type="password" id="player-pw-new" placeholder="Choose a password" style="margin-bottom:10px" onkeydown="if(event.key===\'Enter\')loginPlayer()"/>' +
-      '<input type="password" id="player-pw-confirm" placeholder="Confirm password" style="margin-bottom:10px" onkeydown="if(event.key===\'Enter\')loginPlayer()"/>';
+
+window.loginPlayer = async function() {
+  var el = document.getElementById("player-select");
+  var errEl = document.getElementById("player-pw-error");
+  if (!el || !el.value) { if (errEl) errEl.textContent = "Please select your name."; return; }
+  var name = el.value;
+  var player = (appState.data.players||[]).find(function(p) { return p.name === name; });
+  if (!player) { errEl.textContent = "Player not found."; return; }
+
+  if (!playerHasPassword(player)) {
+    var pw1El = document.getElementById("player-pw-new");
+    var pw2El = document.getElementById("player-pw-confirm");
+    if (!pw1El || !pw2El) { checkPlayerPw(); errEl.textContent = "Please set your password first."; return; }
+    var pw1 = pw1El.value || "";
+    var pw2 = pw2El.value || "";
+    if (!pw1) { errEl.textContent = "Please choose a password."; return; }
+    if (pw1.length < 4) { errEl.textContent = "Password must be at least 4 characters."; return; }
+    if (pw1 !== pw2) { errEl.textContent = "Passwords don't match."; return; }
+    var d = JSON.parse(JSON.stringify(appState.data));
+    var idx = d.players.findIndex(function(p) { return p.name === name; });
+    if (idx < 0) { errEl.textContent = "Error saving password."; return; }
+    d.players[idx].password = pw1;
+    await saveData(d);
+    flash("Password set! Welcome, " + name + "!");
   } else {
-    area.innerHTML =
-      '<input type="password" id="player-pw" placeholder="Your password" style="margin-bottom:10px" onkeydown="if(event.key===\'Enter\')loginPlayer()"/>';
+    var pwEl = document.getElementById("player-pw");
+    if (!pwEl) { checkPlayerPw(); errEl.textContent = "Please enter your password."; return; }
+    var pw = pwEl.value || "";
+    if (!pw) { errEl.textContent = "Please enter your password."; return; }
+    if (pw !== player.password) { errEl.textContent = "Incorrect password."; return; }
   }
+
+  errEl.textContent = "";
+  appState.user = { name: name, isAdmin: false };
+  appState.view = "player";
+  render();
+};
+
+window.loginAdmin = function() {
+  var el = document.getElementById("admin-pw");
+  if (el && el.value === ADMIN_PW) { appState.user = { name:"Commissioner", isAdmin:true }; appState.view = "admin"; render(); }
+  else document.getElementById("pw-error").textContent = "Incorrect password.";
 };
 
 // ADMIN
@@ -507,6 +525,7 @@ function renderAdmin() {
     '<div class="admin-tabs" style="margin-bottom:20px">' + btns + '</div>' +
     '<div id="admin-panel">' + renderAdminSetup() + '</div>';
 }
+
 window.adminTab = function(t) {
   ["setup","players","runs","manage","picks","reset"].forEach(function(x) {
     var el = document.getElementById("atab-"+x); if (el) el.classList.toggle("active",x===t);
@@ -521,103 +540,94 @@ window.adminTab = function(t) {
 };
 
 function renderAdminSetup() {
-  var rotation = (appState.data.rotation || [0,5,4,2,7,1,3,6]).map(function(n){return n+1;}).join(", ");
+  var rotation = (appState.data.rotation || ROTATION).map(function(n){return n+1;}).join(", ");
   var pc = appState.data.playerCount || 8;
-
-  // Season is active if any picks or runs have been recorded
-  var seasonActive = false;
   var weeks = appState.data.weeks || {};
+  var seasonActive = false;
   for (var w in weeks) {
     if ((weeks[w].picks && Object.keys(weeks[w].picks).length > 0) ||
-        (weeks[w].runs  && Object.keys(weeks[w].runs).length  > 0)) {
-      seasonActive = true; break;
-    }
+        (weeks[w].runs  && Object.keys(weeks[w].runs).length  > 0)) { seasonActive = true; break; }
   }
-
   var lockStyle = seasonActive ? 'opacity:.45;pointer-events:none' : '';
   var lockMsg = seasonActive
-    ? '<div style="background:#f59e0b22;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:18px;font-size:13px">' +
-      '<strong style="color:#f59e0b">Season is active</strong> — player count and rotation are locked to prevent mid-season changes. ' +
-      'Use <strong>Reset Pool</strong> to start fresh, or clear all picks/runs first.</div>'
-    : '<div style="background:#16a34a22;border:1px solid #16a34a;border-radius:8px;padding:10px 16px;margin-bottom:18px;font-size:13px;color:#16a34a">' +
-      'No season data yet — all settings are editable.</div>';
-
-  var startLock = seasonActive ? 'style="opacity:.45;pointer-events:none"' : '';
-
+    ? '<div style="background:#f59e0b22;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:18px;font-size:13px"><strong style="color:#f59e0b">Season is active</strong> — start date, player count and rotation are locked. Use Reset Pool to start fresh.</div>'
+    : '<div style="background:#16a34a22;border:1px solid #16a34a;border-radius:8px;padding:10px 16px;margin-bottom:18px;font-size:13px;color:#16a34a">No season data yet — all settings are editable.</div>';
   return '<div class="card" style="max-width:520px">' +
     '<h3 style="font-weight:700;margin-bottom:16px">Season Settings</h3>' +
-
-    '<div ' + startLock + '>' +
+    '<div style="' + lockStyle + '">' +
     '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Season Start Date</label>' +
     '<input type="date" id="season-start" value="' + (appState.data.seasonStart||'') + '" style="margin-bottom:14px"/>' +
     '</div>' +
-
     '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Number of Weeks</label>' +
     '<input type="number" id="week-count" value="' + (appState.data.weekCount||26) + '" min="1" max="30" style="margin-bottom:18px"/>' +
-
     lockMsg +
-
     '<div style="' + lockStyle + '">' +
     '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Number of Players</label>' +
     '<input type="number" id="player-count" value="' + pc + '" min="2" max="12" style="margin-bottom:6px"/>' +
-    '<p style="color:#475569;font-size:12px;margin-bottom:14px">Changing this will update the rotation length. Save and then update the rotation below.</p>' +
-
-    '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Draft Rotation (pick positions, comma-separated)</label>' +
+    '<p style="color:#475569;font-size:12px;margin-bottom:14px">Changing this will update the rotation length.</p>' +
+    '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Draft Rotation (comma-separated pick positions)</label>' +
     '<input type="text" id="rotation-input" value="' + rotation + '" style="margin-bottom:6px"/>' +
-    '<p style="color:#475569;font-size:12px;margin-bottom:16px">Enter one number per player showing their pick position in Week 1. Must contain each position from 1 to N exactly once.<br>' +
-    'Example for 8 players: <strong style="color:#94a3b8">1, 6, 5, 3, 8, 2, 4, 7</strong></p>' +
+    '<p style="color:#475569;font-size:12px;margin-bottom:16px">Each number is a pick position for Week 1. Must contain 1 through N exactly once.<br>Example for 8 players: <strong style="color:#94a3b8">1, 6, 5, 3, 8, 2, 4, 7</strong></p>' +
     '</div>' +
-
     '<button style="padding:10px 24px;background:#2563eb;color:#fff" onclick="saveSetup()">Save Settings</button></div>';
 }
+
 window.saveSetup = async function() {
-  var start = document.getElementById("season-start").value;
   var wc = Number(document.getElementById("week-count").value);
-  var pc = Number(document.getElementById("player-count").value);
-  var rotRaw = document.getElementById("rotation-input").value;
-
-  // Parse and validate rotation
-  var rotParsed = rotRaw.split(",").map(function(s) { return parseInt(s.trim(), 10); });
-  if (rotParsed.some(isNaN)) { flash("Rotation must be numbers separated by commas.", "#dc2626"); return; }
-  if (rotParsed.length !== pc) { flash("Rotation must have exactly " + pc + " numbers (one per player).", "#dc2626"); return; }
-  var sorted = rotParsed.slice().sort(function(a,b){return a-b;});
-  for (var i = 0; i < sorted.length; i++) {
-    if (sorted[i] !== i+1) { flash("Rotation must contain each position from 1 to " + pc + " exactly once.", "#dc2626"); return; }
-  }
-  // Convert to 0-indexed
-  var rotation = rotParsed.map(function(n) { return n-1; });
-
   var d = JSON.parse(JSON.stringify(appState.data));
-  d.seasonStart = start; d.weekCount = wc; d.playerCount = pc; d.rotation = rotation;
+  d.weekCount = wc;
+  var weeks = appState.data.weeks || {};
+  var seasonActive = false;
+  for (var w in weeks) {
+    if ((weeks[w].picks && Object.keys(weeks[w].picks).length > 0) ||
+        (weeks[w].runs  && Object.keys(weeks[w].runs).length  > 0)) { seasonActive = true; break; }
+  }
+  if (!seasonActive) {
+    d.seasonStart = document.getElementById("season-start").value;
+    var pc = Number(document.getElementById("player-count").value);
+    var rotRaw = document.getElementById("rotation-input").value;
+    var rotParsed = rotRaw.split(",").map(function(s) { return parseInt(s.trim(), 10); });
+    if (rotParsed.some(isNaN)) { flash("Rotation must be numbers separated by commas.", "#dc2626"); return; }
+    if (rotParsed.length !== pc) { flash("Rotation must have exactly " + pc + " numbers.", "#dc2626"); return; }
+    var sorted = rotParsed.slice().sort(function(a,b){return a-b;});
+    for (var i = 0; i < sorted.length; i++) {
+      if (sorted[i] !== i+1) { flash("Rotation must contain each position from 1 to " + pc + " exactly once.", "#dc2626"); return; }
+    }
+    d.playerCount = pc;
+    d.rotation = rotParsed.map(function(n) { return n-1; });
+  }
   await saveData(d); flash("Season settings saved!");
 };
 
 function renderAdminPlayers() {
   var pc = appState.data.playerCount || 8;
   var players = (appState.data.players&&appState.data.players.length) ? appState.data.players : [];
-  while (players.length < pc) players.push({name:"",draftOrder:{}});
-  var inputs = players.slice(0, pc).map(function(p,i) {
+  while (players.length < pc) players.push({name:"",draftOrder:{},password:""});
+  var inputs = players.slice(0,pc).map(function(p,i) {
     return '<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">' +
       '<input id="pname-'+i+'" value="'+(p.name||'')+'" placeholder="Player '+(i+1)+' name" style="flex:2;margin-bottom:0"/>' +
-      '<input type="password" id="ppw-'+i+'" value="'+(p.password||'')+'" placeholder="Password" style="flex:1;margin-bottom:0"/>' +
+      '<input type="password" id="ppw-'+i+'" value="'+(p.password||'')+'" placeholder="Password (leave blank to keep)" style="flex:1;margin-bottom:0"/>' +
       '</div>';
   }).join("");
   return '<div style="display:flex;gap:20px;flex-wrap:wrap">' +
-    '<div class="card" style="flex:1 1 260px"><h3 style="font-weight:700;margin-bottom:14px">Player Names</h3>' + inputs +
+    '<div class="card" style="flex:1 1 260px"><h3 style="font-weight:700;margin-bottom:8px">Player Names & Passwords</h3>' +
+    '<p style="color:#94a3b8;font-size:12px;margin-bottom:12px">Leave password blank to keep existing. Players can set their own password on first login after a reset.</p>' +
+    inputs +
     '<button style="padding:10px 24px;background:#2563eb;color:#fff;margin-top:4px" onclick="savePlayers()">Save Players</button></div>' +
     '<div class="card" style="flex:1 1 260px"><h3 style="font-weight:700;margin-bottom:12px">Draft Order by Week</h3>' +
-    '<p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Auto-rotation: 1-6-5-3-8-2-4-7. Override a specific week below.</p>' +
+    '<p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Auto-rotation: ' + (appState.data.rotation||ROTATION).map(function(n){return n+1;}).join("-") + '. Override a specific week below.</p>' +
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
     '<input type="number" id="order-week" value="1" min="1" max="'+(appState.data.weekCount||26)+'" style="width:60px"/>' +
     '<button style="padding:6px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadOrderEditor()">Edit</button></div>' +
     '<div id="order-editor"></div></div></div>';
 }
+
 window.savePlayers = async function() {
   var pc = appState.data.playerCount || 8;
   var existing = (appState.data.players&&appState.data.players.length) ? appState.data.players : [];
   while (existing.length < pc) existing.push({name:"",draftOrder:{},password:""});
-  var updated = existing.slice(0, pc).map(function(p,i) {
+  var updated = existing.slice(0,pc).map(function(p,i) {
     var nameEl = document.getElementById("pname-"+i);
     var pwEl   = document.getElementById("ppw-"+i);
     var newPw  = pwEl ? pwEl.value.trim() : "";
@@ -627,7 +637,9 @@ window.savePlayers = async function() {
   var d = JSON.parse(JSON.stringify(appState.data)); d.players = updated;
   await saveData(d); flash("Players saved!");
 };
+
 window.loadOrderEditor = function() { renderOrderEditor(Number(document.getElementById("order-week").value)); };
+
 function renderOrderEditor(weekNum) {
   var players = appState.data.players || [];
   if (!players.length) { document.getElementById("order-editor").innerHTML = '<p style="color:#94a3b8">Save players first.</p>'; return; }
@@ -645,12 +657,14 @@ function renderOrderEditor(weekNum) {
     '<div style="color:#38bdf8;font-weight:700;margin-bottom:10px">Week '+weekNum+' Pick Order</div>' + rows +
     '<button style="margin-top:8px;padding:8px 18px;background:#16a34a;color:#fff" onclick="saveOrder('+weekNum+')">Save Order</button>';
 }
+
 window.orderMove = function(weekNum,idx,dir) {
-  var ni = idx+dir; if (ni<0||ni>=orderState.length) return;
+  var ni=idx+dir; if (ni<0||ni>=orderState.length) return;
   var tmp=orderState[idx]; orderState[idx]=orderState[ni]; orderState[ni]=tmp;
   orderState.forEach(function(p,i) { p.draftOrder=p.draftOrder||{}; p.draftOrder[weekNum]=i; });
   renderOrderEditor(weekNum);
 };
+
 window.saveOrder = async function(weekNum) {
   var d = JSON.parse(JSON.stringify(appState.data));
   d.players.forEach(function(p) {
@@ -680,7 +694,9 @@ function renderAdminRuns(w) {
     '<div id="runs-rows">'+(entries.length===0?'<p style="color:#94a3b8">No picks for this week yet.</p>':rows)+'</div>' +
     (entries.length>0?'<button style="margin-top:8px;padding:10px 24px;background:#2563eb;color:#fff" onclick="saveRuns('+w+')">Save Runs</button>':'')+'</div>';
 }
+
 window.changeRunsWeek = function() { document.getElementById("admin-panel").innerHTML = renderAdminRuns(Number(document.getElementById("runs-week").value)); };
+
 window.saveRuns = async function(w) {
   var picks = (appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)||{};
   var runs = {};
@@ -692,6 +708,7 @@ window.saveRuns = async function(w) {
   d.weeks=d.weeks||{}; d.weeks[w]=d.weeks[w]||{}; d.weeks[w].runs=runs;
   await saveData(d); flash("Runs saved for Week "+w+"!");
 };
+
 window.fetchLiveRunsAdmin = async function() {
   var w = Number(document.getElementById("runs-week").value);
   var picks = (appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)||{};
@@ -727,6 +744,7 @@ function renderAdminManage(w) {
     '<button style="padding:10px 18px;background:'+(manualLocked?"#16a34a":"#ef4444")+';color:#fff" onclick="toggleLock('+w+','+manualLocked+')">'+(manualLocked?"Unlock Week":"Lock Week")+'</button>' +
     '<button style="padding:10px 18px;background:#b45309;color:#fff" onclick="clearPicks('+w+')">Clear Picks</button></div></div>';
 }
+
 window.loadManage = function() { document.getElementById("admin-panel").innerHTML = renderAdminManage(Number(document.getElementById("manage-week").value)); };
 window.toggleLock = async function(w,locked) {
   var d = JSON.parse(JSON.stringify(appState.data));
@@ -768,6 +786,7 @@ function renderAdminPicks(w) {
     '<button style="padding:10px 24px;background:#2563eb;color:#fff" onclick="saveAdminPicks('+w+')">Save Picks</button>' +
     '<button style="padding:10px 24px;background:#b45309;color:#fff" onclick="clearAdminPick('+w+')">Clear All Picks</button></div></div>';
 }
+
 window.loadAdminPicks = function() { document.getElementById("admin-panel").innerHTML = renderAdminPicks(Number(document.getElementById("apick-week").value)); };
 window.saveAdminPicks = async function(w) {
   var players = appState.data.players||[];
@@ -794,22 +813,29 @@ window.clearAdminPick = async function(w) {
 function renderAdminReset() {
   return '<div class="card" style="max-width:480px;border:2px solid #ef4444">' +
     '<h3 style="font-weight:700;margin-bottom:8px;color:#ef4444">Reset Pool</h3>' +
-    '<p style="color:#94a3b8;font-size:14px;margin-bottom:20px;line-height:1.6">Use this to wipe the pool data and start fresh.</p>' +
+    '<p style="color:#94a3b8;font-size:14px;margin-bottom:20px;line-height:1.6">Use this to wipe the pool data and start fresh. Player passwords are cleared on reset so everyone sets a new one on first login.</p>' +
     '<div style="display:flex;flex-direction:column;gap:12px">' +
     '<div style="background:#0f172a;border-radius:10px;padding:16px">' +
     '<div style="font-weight:700;margin-bottom:4px">Soft Reset</div>' +
-    '<div style="color:#94a3b8;font-size:13px;margin-bottom:12px">Clears all weeks, picks, runs, and season dates but keeps player names.</div>' +
+    '<div style="color:#94a3b8;font-size:13px;margin-bottom:12px">Clears all weeks, picks, runs, season dates and passwords — keeps player names.</div>' +
     '<button style="padding:10px 20px;background:#b45309;color:#fff" onclick="doResetPool(false)">Reset Season Data Only</button></div>' +
     '<div style="background:#0f172a;border-radius:10px;padding:16px">' +
     '<div style="font-weight:700;margin-bottom:4px">Full Reset</div>' +
     '<div style="color:#94a3b8;font-size:13px;margin-bottom:12px">Wipes everything including player names.</div>' +
     '<button style="padding:10px 20px;background:#ef4444;color:#fff" onclick="doResetPool(true)">Full Reset - Wipe Everything</button></div></div></div>';
 }
+
 window.doResetPool = async function(fullReset) {
   var answer = prompt(fullReset?"FULL RESET: Type RESET to confirm:":"SOFT RESET: Type RESET to confirm:");
   if (answer!=="RESET") { flash("Reset cancelled.","#b45309"); return; }
   var newData = defaultData();
-  if (!fullReset) (appState.data.players||[]).forEach(function(p) { newData.players.push({name:p.name,draftOrder:{}}); });
+  if (!fullReset) {
+    (appState.data.players||[]).forEach(function(p) {
+      newData.players.push({name:p.name, draftOrder:{}, password:""});
+    });
+    newData.rotation = appState.data.rotation || ROTATION;
+    newData.playerCount = appState.data.playerCount || 8;
+  }
   scheduleCache={}; liveRunsCache={};
   await saveData(newData);
   flash(fullReset?"Pool fully reset!":"Season data cleared - player names kept!","#b45309");
@@ -877,12 +903,14 @@ function renderPlayer() {
     (histRows?'<table><thead><tr><th>Week</th><th>Team</th><th style="text-align:right">Runs</th></tr></thead><tbody>'+histRows+'</tbody></table>':'<p style="color:#94a3b8">No picks recorded yet.</p>')+
     '</div></div>';
 }
+
 window.playerTab = function(t) {
   document.getElementById("player-panel").style.display=t==="pick"?"block":"none";
   document.getElementById("player-history").style.display=t==="history"?"block":"none";
   document.getElementById("ptab-pick").classList.toggle("active",t==="pick");
   document.getElementById("ptab-history").classList.toggle("active",t==="history");
 };
+
 window.makePick = async function(team,w) {
   var name=appState.user.name, pickCheck=canPlayerPick(w,name);
   if (!pickCheck.can) { flash(pickCheck.reason,"#dc2626"); return; }
@@ -905,6 +933,7 @@ function renderDraftShell() {
     '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadDraftTable(Number(document.getElementById(\'draft-week\').value))">Load</button></div></div>' +
     '<div id="draft-table"><div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div></div>';
 }
+
 async function loadDraftTable(w) {
   var el=document.getElementById("draft-table"); if (!el) return;
   el.innerHTML='<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div>';
@@ -940,6 +969,7 @@ function renderStandingsShell() {
     '<div id="stand-week"><div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Fetching live runs...</div></div>' +
     '<div id="stand-season" style="display:none"></div>';
 }
+
 async function loadStandingsWeek(w) {
   var el=document.getElementById("stand-week"); if (!el) return;
   el.innerHTML='<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Fetching live runs...</div>';
@@ -977,6 +1007,7 @@ async function loadStandingsWeek(w) {
     '<thead><tr><th>Rank</th><th>Player</th><th>Team</th><th style="text-align:right">Runs</th><th style="text-align:right">Winnings</th></tr></thead>' +
     '<tbody>'+trs+'</tbody></table></div>';
 }
+
 window.standTab = function(t) {
   document.getElementById("stand-week").style.display=t==="week"?"block":"none";
   document.getElementById("stand-season").style.display=t==="season"?"block":"none";
@@ -1009,7 +1040,7 @@ function renderResearchShell() {
     '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin:0">Schedule Research</h2>' +
     '<div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="research-week" value="' + w + '" min="1" max="' + maxWeek + '" style="width:60px;font-size:14px"/>' +
+    '<input type="number" id="research-week" value="'+w+'" min="1" max="'+maxWeek+'" style="width:60px;font-size:14px"/>' +
     '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadResearchTable(Number(document.getElementById(\'research-week\').value))">Load</button>' +
     '<button style="padding:7px 14px;background:#0f172a;color:#94a3b8;font-size:13px;border:1px solid #334155" onclick="refreshResearch()">Refresh</button>' +
     '</div></div>' +
@@ -1036,7 +1067,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
     var teamSchedule = {};
     MLB_TEAMS.forEach(function(t) { teamSchedule[t]={0:[],1:[],2:[],3:[],4:[],5:[],6:[]}; });
     (json.dates||[]).forEach(function(de) {
-      var dayIdx = -1;
+      var dayIdx=-1;
       for (var di=0;di<days.length;di++) { if (fmt(days[di])===de.date){dayIdx=di;break;} }
       if (dayIdx<0) return;
       (de.games||[]).forEach(function(g) {
@@ -1053,26 +1084,21 @@ async function loadResearchTable(w, sortBy, sortDir) {
       if (gms.length===0) return '<span style="color:#334155">--</span>';
       return gms.map(function(g) { return '<span style="color:#f1f5f9">'+(g.isHome?"":"@")+abbrev(g.opp)+'</span>'; }).join("<br>");
     }
-
-    // My picks across all weeks (excluding this week)
     var myPickedTeams = [];
     if (appState.user&&!appState.user.isAdmin) {
       var pname=appState.user.name, allWeeks=appState.data.weeks||{};
       for (var wk in allWeeks) { if (Number(wk)!==w&&allWeeks[wk].picks&&allWeeks[wk].picks[pname]) myPickedTeams.push(allWeeks[wk].picks[pname]); }
     }
-    // This week's pick
     var myThisWeekPick = null;
     if (appState.user&&!appState.user.isAdmin) {
       var wp=(appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)||{};
       myThisWeekPick = wp[appState.user.name]||null;
     }
-
     var teamList = MLB_TEAMS.map(function(team) { return {name:team,sched:teamSchedule[team],total:totalGames(teamSchedule[team])}; });
     teamList.sort(function(a,b) {
       var cmp = sortBy==="games" ? b.total-a.total : (a.name<b.name?-1:a.name>b.name?1:0);
       return sortDir==="asc"?-cmp:cmp;
     });
-
     function sortArrow(col) {
       if (sortBy!==col) return ' <span style="color:#475569">&#8597;</span>';
       return sortDir==="desc"?' <span style="color:#38bdf8">&#8595;</span>':' <span style="color:#38bdf8">&#8593;</span>';
@@ -1082,11 +1108,9 @@ async function loadResearchTable(w, sortBy, sortDir) {
       return 'onclick="loadResearchTable('+w+',\''+col+'\',\''+nd+'\')"';
     }
     var ths='style="cursor:pointer;user-select:none;white-space:nowrap"';
-
     var hdr='<tr><th '+ths+' '+thClick("name")+'>Team'+sortArrow("name")+'</th><th '+ths+' '+thClick("games")+' style="text-align:center;cursor:pointer;user-select:none">Total'+sortArrow("games")+'</th>';
     for (var dh=0;dh<7;dh++) hdr+='<th style="text-align:center">'+dayLabels[dh]+'<br><span style="font-weight:400;color:#64748b">'+(days[dh].getMonth()+1)+'/'+days[dh].getDate()+'</span></th>';
     hdr+='</tr>';
-
     var teamRows="";
     teamList.forEach(function(item) {
       var isThisWeek=item.name===myThisWeekPick;
@@ -1100,7 +1124,6 @@ async function loadResearchTable(w, sortBy, sortDir) {
       for (var dc=0;dc<7;dc++) teamRows+='<td style="text-align:center;font-size:12px;line-height:1.4">'+cellContent(item.sched[dc])+'</td>';
       teamRows+='</tr>';
     });
-
     el.innerHTML='<div style="color:#94a3b8;font-size:12px;margin-bottom:10px">Week '+w+': '+fmt(days[0])+' to '+fmt(days[6])+'</div>' +
       '<div style="font-size:12px;margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap">' +
       '<span style="color:#16a34a;font-weight:700">7+ games</span>' +
