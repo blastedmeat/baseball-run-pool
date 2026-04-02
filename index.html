@@ -116,7 +116,7 @@ var orderState = [];
 var _researchSort = "games";
 var _researchDir = "desc";
 
-function defaultData() { return { seasonStart:"", weekCount:26, players:[], weeks:{} }; }
+function defaultData() { return { seasonStart:"", weekCount:26, playerCount:8, rotation:[0,5,4,2,7,1,3,6], players:[], weeks:{} }; }
 
 async function saveData(d) { appState.data = d; await setDoc(POOL_DOC, d); }
 
@@ -135,8 +135,10 @@ function currentWeek() {
 }
 
 function getDraftPosition(playerIndex, weekNum) {
-  var w = (weekNum - 1) % 8;
-  return (ROTATION[w] + playerIndex) % 8;
+  var rotation = appState.data.rotation || [0,5,4,2,7,1,3,6];
+  var n = rotation.length;
+  var w = (weekNum - 1) % n;
+  return (rotation[w] + playerIndex) % n;
 }
 
 function orderedPlayers(weekNum) {
@@ -484,25 +486,49 @@ window.adminTab = function(t) {
 };
 
 function renderAdminSetup() {
-  return '<div class="card" style="max-width:400px">' +
+  var rotation = (appState.data.rotation || [0,5,4,2,7,1,3,6]).map(function(n){return n+1;}).join(", ");
+  var pc = appState.data.playerCount || 8;
+  return '<div class="card" style="max-width:500px">' +
     '<h3 style="font-weight:700;margin-bottom:16px">Season Settings</h3>' +
     '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Season Start Date</label>' +
     '<input type="date" id="season-start" value="' + (appState.data.seasonStart||'') + '" style="margin-bottom:14px"/>' +
     '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Number of Weeks</label>' +
-    '<input type="number" id="week-count" value="' + (appState.data.weekCount||26) + '" min="1" max="30" style="margin-bottom:16px"/>' +
+    '<input type="number" id="week-count" value="' + (appState.data.weekCount||26) + '" min="1" max="30" style="margin-bottom:14px"/>' +
+    '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Number of Players</label>' +
+    '<input type="number" id="player-count" value="' + pc + '" min="2" max="12" style="margin-bottom:6px"/>' +
+    '<p style="color:#475569;font-size:12px;margin-bottom:14px">Changing this will update the rotation length. Save and then update the rotation below.</p>' +
+    '<label style="color:#94a3b8;font-size:13px;display:block;margin-bottom:6px">Draft Rotation (pick positions, comma-separated)</label>' +
+    '<input type="text" id="rotation-input" value="' + rotation + '" style="margin-bottom:6px"/>' +
+    '<p style="color:#475569;font-size:12px;margin-bottom:16px">Enter one number per player showing their pick position in Week 1. Must contain each position from 1 to N exactly once.<br>Example for 8 players: <strong style="color:#94a3b8">1, 6, 5, 3, 8, 2, 4, 7</strong><br>This means Player 1 picks 1st in Week 1, 6th in Week 2, 5th in Week 3, etc.</p>' +
     '<button style="padding:10px 24px;background:#2563eb;color:#fff" onclick="saveSetup()">Save Settings</button></div>';
 }
 window.saveSetup = async function() {
+  var start = document.getElementById("season-start").value;
+  var wc = Number(document.getElementById("week-count").value);
+  var pc = Number(document.getElementById("player-count").value);
+  var rotRaw = document.getElementById("rotation-input").value;
+
+  // Parse and validate rotation
+  var rotParsed = rotRaw.split(",").map(function(s) { return parseInt(s.trim(), 10); });
+  if (rotParsed.some(isNaN)) { flash("Rotation must be numbers separated by commas.", "#dc2626"); return; }
+  if (rotParsed.length !== pc) { flash("Rotation must have exactly " + pc + " numbers (one per player).", "#dc2626"); return; }
+  var sorted = rotParsed.slice().sort(function(a,b){return a-b;});
+  for (var i = 0; i < sorted.length; i++) {
+    if (sorted[i] !== i+1) { flash("Rotation must contain each position from 1 to " + pc + " exactly once.", "#dc2626"); return; }
+  }
+  // Convert to 0-indexed
+  var rotation = rotParsed.map(function(n) { return n-1; });
+
   var d = JSON.parse(JSON.stringify(appState.data));
-  d.seasonStart = document.getElementById("season-start").value;
-  d.weekCount = Number(document.getElementById("week-count").value);
+  d.seasonStart = start; d.weekCount = wc; d.playerCount = pc; d.rotation = rotation;
   await saveData(d); flash("Season settings saved!");
 };
 
 function renderAdminPlayers() {
+  var pc = appState.data.playerCount || 8;
   var players = (appState.data.players&&appState.data.players.length) ? appState.data.players : [];
-  while (players.length < 8) players.push({name:"",draftOrder:{}});
-  var inputs = players.map(function(p,i) { return '<input id="pname-'+i+'" value="'+(p.name||'')+'" placeholder="Player '+(i+1)+'" style="margin-bottom:10px"/>'; }).join("");
+  while (players.length < pc) players.push({name:"",draftOrder:{}});
+  var inputs = players.slice(0, pc).map(function(p,i) { return '<input id="pname-'+i+'" value="'+(p.name||'')+'" placeholder="Player '+(i+1)+'" style="margin-bottom:10px"/>'; }).join("");
   return '<div style="display:flex;gap:20px;flex-wrap:wrap">' +
     '<div class="card" style="flex:1 1 260px"><h3 style="font-weight:700;margin-bottom:14px">Player Names</h3>' + inputs +
     '<button style="padding:10px 24px;background:#2563eb;color:#fff;margin-top:4px" onclick="savePlayers()">Save Players</button></div>' +
@@ -515,9 +541,10 @@ function renderAdminPlayers() {
     '<div id="order-editor"></div></div></div>';
 }
 window.savePlayers = async function() {
+  var pc = appState.data.playerCount || 8;
   var existing = (appState.data.players&&appState.data.players.length) ? appState.data.players : [];
-  while (existing.length < 8) existing.push({name:"",draftOrder:{}});
-  var updated = existing.map(function(p,i) {
+  while (existing.length < pc) existing.push({name:"",draftOrder:{}});
+  var updated = existing.slice(0, pc).map(function(p,i) {
     var el = document.getElementById("pname-"+i);
     return { name: el?el.value.trim():"", draftOrder: p.draftOrder||{} };
   }).filter(function(p) { return p.name; });
