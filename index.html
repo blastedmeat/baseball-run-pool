@@ -464,6 +464,27 @@ window.loginAdmin = function() {
   else document.getElementById("pw-error").textContent = "Incorrect password.";
 };
 
+window.checkPlayerPw = function() {
+  var sel = document.getElementById("player-select");
+  var area = document.getElementById("player-pw-area");
+  var errEl = document.getElementById("player-pw-error");
+  if (errEl) errEl.textContent = "";
+  if (!sel || !sel.value || !area) return;
+  var name = sel.value;
+  var player = (appState.data.players||[]).find(function(p) { return p.name === name; });
+  if (!player) { area.innerHTML = ""; return; }
+  if (!player.password) {
+    area.innerHTML =
+      '<div style="background:#2563eb22;border:1px solid #2563eb;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#94a3b8">' +
+      'Welcome <strong style="color:#f1f5f9">' + name + '</strong>! Set your password for future logins.</div>' +
+      '<input type="password" id="player-pw-new" placeholder="Choose a password" style="margin-bottom:10px" onkeydown="if(event.key===\'Enter\')loginPlayer()"/>' +
+      '<input type="password" id="player-pw-confirm" placeholder="Confirm password" style="margin-bottom:10px" onkeydown="if(event.key===\'Enter\')loginPlayer()"/>';
+  } else {
+    area.innerHTML =
+      '<input type="password" id="player-pw" placeholder="Your password" style="margin-bottom:10px" onkeydown="if(event.key===\'Enter\')loginPlayer()"/>';
+  }
+};
+
 // ADMIN
 function renderAdmin() {
   var tabLabels = {setup:"Season Setup",players:"Players & Draft Order",runs:"Enter Runs",manage:"Week Management",picks:"Enter Pick",reset:"Reset Pool"};
