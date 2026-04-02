@@ -439,7 +439,7 @@ function renderHome() {
     '<div id="home-player-panel">' +
     (!opts ? '<p style="color:#94a3b8;text-align:center">No players set up yet.</p>' :
       '<select id="player-select" style="margin-bottom:12px" onchange="checkPlayerPw()">' +
-      '<option value="">Select your name...</option>' + opts + '</select>' +
+      '<option value="">-- Select your name --</option>' + opts + '</select>' +
       '<div id="player-pw-area"></div>' +
       '<div id="player-pw-error" style="color:#ef4444;font-size:13px;margin-top:8px"></div>' +
       '<button style="width:100%;padding:11px;background:#2563eb;color:#fff;font-size:16px;margin-top:8px" onclick="loginPlayer()">Enter Pool</button>') + '</div>' +
