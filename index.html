@@ -438,8 +438,11 @@ function renderHome() {
     '<button class="tab-btn" id="tab-admin" onclick="homeTab(\'admin\')" style="flex:1">Admin Login</button></div>' +
     '<div id="home-player-panel">' +
     (!opts ? '<p style="color:#94a3b8;text-align:center">No players set up yet.</p>' :
-      '<select id="player-select" style="margin-bottom:12px"><option value="">Select your name...</option>' + opts + '</select>' +
-      '<button style="width:100%;padding:11px;background:#2563eb;color:#fff;font-size:16px" onclick="loginPlayer()">Enter Pool</button>') + '</div>' +
+      '<select id="player-select" style="margin-bottom:12px" onchange="checkPlayerPw()">' +
+      '<option value="">Select your name...</option>' + opts + '</select>' +
+      '<div id="player-pw-area"></div>' +
+      '<button style="width:100%;padding:11px;background:#2563eb;color:#fff;font-size:16px;margin-top:4px" onclick="loginPlayer()">Enter Pool</button>' +
+      '<div id="player-pw-error" style="color:#ef4444;font-size:13px;margin-top:8px"></div>') + '</div>' +
     '<div id="home-admin-panel" style="display:none">' +
     '<input type="password" id="admin-pw" placeholder="Commissioner password" style="margin-bottom:8px" onkeydown="if(event.key===\'Enter\')loginAdmin()"/>' +
     '<div id="pw-error" style="color:#ef4444;font-size:13px;margin-bottom:8px"></div>' +
@@ -561,7 +564,12 @@ function renderAdminPlayers() {
   var pc = appState.data.playerCount || 8;
   var players = (appState.data.players&&appState.data.players.length) ? appState.data.players : [];
   while (players.length < pc) players.push({name:"",draftOrder:{}});
-  var inputs = players.slice(0, pc).map(function(p,i) { return '<input id="pname-'+i+'" value="'+(p.name||'')+'" placeholder="Player '+(i+1)+'" style="margin-bottom:10px"/>'; }).join("");
+  var inputs = players.slice(0, pc).map(function(p,i) {
+    return '<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">' +
+      '<input id="pname-'+i+'" value="'+(p.name||'')+'" placeholder="Player '+(i+1)+' name" style="flex:2;margin-bottom:0"/>' +
+      '<input type="password" id="ppw-'+i+'" value="'+(p.password||'')+'" placeholder="Password" style="flex:1;margin-bottom:0"/>' +
+      '</div>';
+  }).join("");
   return '<div style="display:flex;gap:20px;flex-wrap:wrap">' +
     '<div class="card" style="flex:1 1 260px"><h3 style="font-weight:700;margin-bottom:14px">Player Names</h3>' + inputs +
     '<button style="padding:10px 24px;background:#2563eb;color:#fff;margin-top:4px" onclick="savePlayers()">Save Players</button></div>' +
@@ -576,10 +584,12 @@ function renderAdminPlayers() {
 window.savePlayers = async function() {
   var pc = appState.data.playerCount || 8;
   var existing = (appState.data.players&&appState.data.players.length) ? appState.data.players : [];
-  while (existing.length < pc) existing.push({name:"",draftOrder:{}});
+  while (existing.length < pc) existing.push({name:"",draftOrder:{},password:""});
   var updated = existing.slice(0, pc).map(function(p,i) {
-    var el = document.getElementById("pname-"+i);
-    return { name: el?el.value.trim():"", draftOrder: p.draftOrder||{} };
+    var nameEl = document.getElementById("pname-"+i);
+    var pwEl   = document.getElementById("ppw-"+i);
+    var newPw  = pwEl ? pwEl.value.trim() : "";
+    return { name: nameEl?nameEl.value.trim():"", draftOrder: p.draftOrder||{}, password: newPw || p.password || "" };
   }).filter(function(p) { return p.name; });
   if (updated.length < 2) { flash("Need at least 2 players.","#dc2626"); return; }
   var d = JSON.parse(JSON.stringify(appState.data)); d.players = updated;
