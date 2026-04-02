@@ -472,8 +472,11 @@ window.checkPlayerPw = function() {
   if (!sel || !sel.value || !area) return;
   var name = sel.value;
   var player = (appState.data.players||[]).find(function(p) { return p.name === name; });
+  console.log("Player found:", player ? player.name : "none");
+  console.log("Password value:", player ? JSON.stringify(player.password) : "n/a");
+  console.log("Has password:", !!(player && player.password && player.password.trim() !== ""));
   if (!player) { area.innerHTML = ""; return; }
-  if (!player.password) {
+  if (!player.password || player.password.trim() === "") {
     area.innerHTML =
       '<div style="background:#2563eb22;border:1px solid #2563eb;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#94a3b8">' +
       'Welcome <strong style="color:#f1f5f9">' + name + '</strong>! Set your password for future logins.</div>' +
