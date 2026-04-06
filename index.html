@@ -429,9 +429,9 @@ function render() {
   if (appState.view === "home")      app.innerHTML = renderHome();
   if (appState.view === "admin")     app.innerHTML = renderAdmin();
   if (appState.view === "player")    app.innerHTML = renderPlayer();
-  if (appState.view === "standings") { app.innerHTML = renderStandingsShell(); loadStandingsWeek(currentWeek()); }
-  if (appState.view === "research")  { app.innerHTML = renderResearchShell(); loadResearchTable(currentWeek(), "games", "desc"); }
-  if (appState.view === "draft")     { app.innerHTML = renderDraftShell(); loadDraftTable(currentWeek()); }
+  if (appState.view === "standings") { app.innerHTML = renderStandingsShell(); processAutoPicks(currentWeek()); loadStandingsWeek(currentWeek()); }
+  if (appState.view === "research")  { app.innerHTML = renderResearchShell(); processAutoPicks(currentWeek()); loadResearchTable(currentWeek(), "games", "desc"); }
+  if (appState.view === "draft")     { app.innerHTML = renderDraftShell(); processAutoPicks(currentWeek()); loadDraftTable(currentWeek()); }
 }
 
 // HOME
