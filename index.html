@@ -122,23 +122,34 @@ function flash(msg, color) {
   setTimeout(function() { document.getElementById("flash-area").innerHTML = ""; }, 3000);
 }
 
+function weekCount() { return (appState.data && appState.data.weekCount) || 26; }
+
+function weekDropdown(id, selected, onchange) {
+  var max = weekCount();
+  var opts = "";
+  for (var i = 1; i <= max; i++) {
+    opts += '<option value="' + i + '"' + (i === selected ? " selected" : "") + '>' + i + '</option>';
+  }
+  return '<select id="' + id + '" style="width:70px;font-size:14px;padding:6px 8px" onchange="' + onchange + '">' + opts + '</select>';
+}
+
 function currentWeek() {
   if (!appState.data || !appState.data.seasonStart) return 1;
   var start = new Date(appState.data.seasonStart);
   var now = new Date();
   var diff = Math.floor((now - start) / (7*24*3600*1000));
-  return Math.max(1, Math.min(diff+1, appState.data.weekCount||26));
+  return Math.max(1, Math.min(diff+1, weekCount()));
 }
 
 function getDraftPosition(playerIndex, weekNum) {
-  var rotation = appState.data.rotation || ROTATION;
+  var rotation = (appState.data && appState.data.rotation) || ROTATION;
   var n = rotation.length;
   var w = (weekNum - 1) % n;
   return (rotation[w] + playerIndex) % n;
 }
 
 function orderedPlayers(weekNum) {
-  var players = appState.data.players || [];
+  var players = (appState.data && appState.data.players) || [];
   var hasOverride = false;
   for (var i = 0; i < players.length; i++) {
     if (players[i].draftOrder && players[i].draftOrder[weekNum] !== undefined) { hasOverride = true; break; }
@@ -160,7 +171,7 @@ function orderedPlayers(weekNum) {
 
 function usedTeams(playerName) {
   var used = [];
-  var weeks = appState.data.weeks || {};
+  var weeks = (appState.data && appState.data.weeks) || {};
   for (var w in weeks) {
     if (weeks[w].picks && weeks[w].picks[playerName]) used.push(weeks[w].picks[playerName]);
   }
@@ -169,36 +180,18 @@ function usedTeams(playerName) {
 
 function takenTeamsThisWeek(weekNum) {
   var taken = [];
-  var picks = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].picks) || {};
+  var picks = (appState.data && appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].picks) || {};
   for (var p in picks) taken.push(picks[p]);
   return taken;
 }
 
-function weekDropdown(id, selected, max, onchange) {
-  var opts = "";
-  for (var i = 1; i <= max; i++) {
-    opts += '<option value="' + i + '"' + (i === selected ? " selected" : "") + '>' + i + '</option>';
-  }
-  return '<select id="' + id + '" style="width:70px;font-size:14px;padding:6px 8px" onchange="' + onchange + '">' + opts + '</select>';
-}
+function playerHasPassword(player) {
   return !!(player && player.password && player.password.trim() !== "");
 }
 
-function toET(dateStr, timeStr) {
-  // Try EDT first (UTC-4, Mar-Nov), fall back to EST (UTC-5, Nov-Mar)
-  // We just use the America/New_York timezone via a trick:
-  // Parse the date as a local ET time by checking what offset NY is using
-  var dt = new Date(dateStr + "T" + timeStr + ":00");
-  // Use Intl to get the correct ET offset for that date
-  var etStr = dateStr + "T" + timeStr + ":00";
-  // Build date using ET timezone string
-  return new Date(new Date(etStr).toLocaleString("en-US", {timeZone:"America/New_York"}) === etStr
-    ? etStr
-    : etStr);
-}
-
+// TIMING
 function getWeekWindow(weekNum) {
-  if (!appState.data.seasonStart) return null;
+  if (!appState.data || !appState.data.seasonStart) return null;
   var start = new Date(appState.data.seasonStart);
   var weekMonday = new Date(start);
   weekMonday.setDate(start.getDate() + (weekNum - 1) * 7);
@@ -206,18 +199,13 @@ function getWeekWindow(weekNum) {
   var sunday = new Date(weekMonday); sunday.setDate(weekMonday.getDate() - 1);
   var fridayStr = friday.toISOString().split("T")[0];
   var sundayStr = sunday.toISOString().split("T")[0];
-  // Use America/New_York timezone correctly for both EST and EDT
-  var openET     = new Date(new Date(fridayStr + "T00:00:00").toLocaleString("en-US", {timeZone:"America/New_York"}) < fridayStr + "T00:00:00"
-    ? fridayStr + "T04:00:00Z"   // EDT (UTC-4)
-    : fridayStr + "T05:00:00Z"); // EST (UTC-5)
-  // Simpler and more reliable: just parse with explicit offset detection
   var testDate = new Date(fridayStr + "T12:00:00Z");
   var etHour = Number(testDate.toLocaleString("en-US", {timeZone:"America/New_York", hour:"numeric", hour12:false}));
   var utcHour = testDate.getUTCHours();
-  var offset = utcHour - etHour; // 4 for EDT, 5 for EST
-  openET     = new Date(Date.UTC(friday.getFullYear(), friday.getMonth(), friday.getDate(),     0 + offset, 0, 0));
-  var mondayBase = new Date(Date.UTC(sunday.getFullYear(), sunday.getMonth(), sunday.getDate(), 14 + offset, 0, 0));
-  var closeET    = new Date(Date.UTC(sunday.getFullYear(), sunday.getMonth(), sunday.getDate(), 22 + offset, 0, 0));
+  var offset = utcHour - etHour;
+  var openET     = new Date(Date.UTC(friday.getUTCFullYear(), friday.getUTCMonth(), friday.getUTCDate(),  0 + offset, 0, 0));
+  var mondayBase = new Date(Date.UTC(sunday.getUTCFullYear(), sunday.getUTCMonth(), sunday.getUTCDate(), 14 + offset, 0, 0));
+  var closeET    = new Date(Date.UTC(sunday.getUTCFullYear(), sunday.getUTCMonth(), sunday.getUTCDate(), 22 + offset, 0, 0));
   return { openET: openET, mondayBase: mondayBase, closeET: closeET };
 }
 
@@ -315,7 +303,7 @@ function calcWeekStandings(weekNum, overrideRuns) {
   var picks = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].picks) || {};
   var savedRuns = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].runs) || {};
   var runs = overrideRuns || savedRuns;
-  var players = appState.data.players || [];
+  var players = (appState.data && appState.data.players) || [];
   var rows = [];
   for (var i = 0; i < players.length; i++) {
     var p = players[i];
@@ -324,7 +312,7 @@ function calcWeekStandings(weekNum, overrideRuns) {
     if (team !== null) playerRuns = (runs[team] !== undefined && runs[team] !== null) ? runs[team] : 0;
     rows.push({ name: p.name, team: team, runs: playerRuns, payout: null });
   }
-  rows.sort(function(a,b) { return ((b.runs!==null?b.runs:-9999)) - ((a.runs!==null?a.runs:-9999)); });
+  rows.sort(function(a,b) { return (b.runs !== null ? b.runs : -9999) - (a.runs !== null ? a.runs : -9999); });
   var withPicks = rows.filter(function(r) { return r.runs !== null; });
   if (withPicks.length > 0) {
     var winner = withPicks[0];
@@ -341,9 +329,9 @@ function calcWeekStandings(weekNum, overrideRuns) {
 
 function calcSeasonStandings() {
   var totals = {};
-  var players = appState.data.players || [];
+  var players = (appState.data && appState.data.players) || [];
   for (var i = 0; i < players.length; i++) totals[players[i].name] = { name: players[i].name, totalRuns: 0, totalWinnings: 0, weeks: 0 };
-  for (var w = 1; w <= (appState.data.weekCount||26); w++) {
+  for (var w = 1; w <= weekCount(); w++) {
     var ws = calcWeekStandings(w);
     var hasData = ws.some(function(r) { return r.runs !== null; });
     if (!hasData) continue;
@@ -360,7 +348,7 @@ function calcSeasonStandings() {
 
 // API
 async function fetchRunsFromAPI(w) {
-  if (!appState.data.seasonStart) return {};
+  if (!appState.data || !appState.data.seasonStart) return {};
   try {
     var start = new Date(appState.data.seasonStart);
     var ws = new Date(start); ws.setDate(start.getDate() + (w-1)*7);
@@ -386,7 +374,7 @@ async function fetchRunsFromAPI(w) {
 
 async function fetchScheduleFromAPI(w) {
   if (scheduleCache[w]) return scheduleCache[w];
-  if (!appState.data.seasonStart) return {};
+  if (!appState.data || !appState.data.seasonStart) return {};
   try {
     var start = new Date(appState.data.seasonStart);
     var ws = new Date(start); ws.setDate(start.getDate() + (w-1)*7);
@@ -454,18 +442,18 @@ function renderHome() {
     : '<p style="color:#f59e0b;margin-top:6px">Season not configured. Admin must set up the pool first.</p>';
   var opts = (appState.data.players||[]).map(function(p) { return '<option value="' + p.name + '">' + p.name + '</option>'; }).join("");
   var draftBanner = "";
-  if (isDraftOpen(currentWeek())) {
+  if (isDraftOpen(w)) {
     draftBanner = '<div style="background:#2563eb22;border:1px solid #2563eb;border-radius:10px;padding:14px 18px;margin-bottom:20px;text-align:center">' +
-      '<div style="font-weight:700;color:#38bdf8;font-size:16px">Draft is open for Week ' + currentWeek() + '!</div>' +
+      '<div style="font-weight:700;color:#38bdf8;font-size:16px">Draft is open for Week ' + w + '!</div>' +
       '<div style="color:#94a3b8;font-size:13px;margin-top:4px">Log in and go to <strong style="color:#f1f5f9">My Picks</strong> to make your selection.</div></div>';
-  } else if (isWeekLocked(currentWeek())) {
+  } else if (isWeekLocked(w)) {
     draftBanner = '<div style="background:#ef444422;border:1px solid #ef4444;border-radius:10px;padding:14px 18px;margin-bottom:20px;text-align:center">' +
-      '<div style="font-weight:700;color:#ef4444;font-size:16px">Week ' + currentWeek() + ' is locked</div>' +
+      '<div style="font-weight:700;color:#ef4444;font-size:16px">Week ' + w + ' is locked</div>' +
       '<div style="color:#94a3b8;font-size:13px;margin-top:4px">Draft window has closed. Check Standings for results.</div></div>';
   }
   return '<div style="text-align:center;margin-bottom:28px;padding-top:20px">' +
     '<div style="font-size:32px;font-weight:800;color:#38bdf8">Baseball Run Pool</div>' + info + '</div>' +
-    (draftBanner ? '<div style="max-width:400px;margin:0 auto 0">' + draftBanner + '</div>' : '') +
+    (draftBanner ? '<div style="max-width:400px;margin:0 auto">' + draftBanner + '</div>' : '') +
     '<div style="max-width:400px;margin:0 auto" class="card">' +
     '<div style="display:flex;gap:8px;margin-bottom:20px">' +
     '<button class="tab-btn active" id="tab-player" onclick="homeTab(\'player\')" style="flex:1">Player Login</button>' +
@@ -518,7 +506,6 @@ window.loginPlayer = async function() {
   var name = el.value;
   var player = (appState.data.players||[]).find(function(p) { return p.name === name; });
   if (!player) { errEl.textContent = "Player not found."; return; }
-
   if (!playerHasPassword(player)) {
     var pw1El = document.getElementById("player-pw-new");
     var pw2El = document.getElementById("player-pw-confirm");
@@ -541,10 +528,8 @@ window.loginPlayer = async function() {
     if (!pw) { errEl.textContent = "Please enter your password."; return; }
     if (pw !== player.password) { errEl.textContent = "Incorrect password."; return; }
   }
-
   errEl.textContent = "";
   appState.user = { name: name, isAdmin: false };
-  // Send players straight to My Picks if draft is open, otherwise Home
   appState.view = isDraftOpen(currentWeek()) ? "player" : "home";
   render();
 };
@@ -647,20 +632,20 @@ function renderAdminPlayers() {
   var inputs = players.slice(0,pc).map(function(p,i) {
     return '<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">' +
       '<input id="pname-'+i+'" value="'+(p.name||'')+'" placeholder="Player '+(i+1)+' name" style="flex:2;margin-bottom:0"/>' +
-      '<input type="password" id="ppw-'+i+'" value="'+(p.password||'')+'" placeholder="Password (leave blank to keep)" style="flex:1;margin-bottom:0"/>' +
+      '<input type="password" id="ppw-'+i+'" value="'+(p.password||'')+'" placeholder="Password" style="flex:1;margin-bottom:0"/>' +
       '</div>';
   }).join("");
   return '<div style="display:flex;gap:20px;flex-wrap:wrap">' +
     '<div class="card" style="flex:1 1 260px"><h3 style="font-weight:700;margin-bottom:8px">Player Names & Passwords</h3>' +
-    '<p style="color:#94a3b8;font-size:12px;margin-bottom:12px">Leave password blank to keep existing. Players can set their own password on first login after a reset.</p>' +
+    '<p style="color:#94a3b8;font-size:12px;margin-bottom:12px">Leave password blank to keep existing. Players set their own on first login after a reset.</p>' +
     inputs +
     '<button style="padding:10px 24px;background:#2563eb;color:#fff;margin-top:4px" onclick="savePlayers()">Save Players</button></div>' +
     '<div class="card" style="flex:1 1 260px"><h3 style="font-weight:700;margin-bottom:12px">Draft Order by Week</h3>' +
     '<p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Auto-rotation: ' + (appState.data.rotation||ROTATION).map(function(n){return n+1;}).join("-") + '. Override a specific week below.</p>' +
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="order-week" value="1" min="1" max="'+(appState.data.weekCount||26)+'" style="width:60px"/>' +
-    '<button style="padding:6px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadOrderEditor()">Edit</button></div>' +
+    weekDropdown("order-week", currentWeek(), "loadOrderEditor()") +
+    '</div>' +
     '<div id="order-editor"></div></div></div>';
 }
 
@@ -729,8 +714,7 @@ function renderAdminRuns(w) {
     '<h3 style="font-weight:700;margin-bottom:14px">Enter / Override Runs</h3>' +
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:18px;flex-wrap:wrap">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="runs-week" value="'+w+'" min="1" max="'+(appState.data.weekCount||26)+'" style="width:60px"/>' +
-    '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="changeRunsWeek()">Load</button>' +
+    weekDropdown("runs-week", w, "changeRunsWeek()") +
     '<button id="fetch-btn" style="padding:7px 14px;background:#0891b2;color:#fff;font-size:13px" onclick="fetchLiveRunsAdmin()">Fetch Live</button></div>' +
     '<div id="runs-rows">'+(entries.length===0?'<p style="color:#94a3b8">No picks for this week yet.</p>':rows)+'</div>' +
     (entries.length>0?'<button style="margin-top:8px;padding:10px 24px;background:#2563eb;color:#fff" onclick="saveRuns('+w+')">Save Runs</button>':'')+'</div>';
@@ -776,8 +760,8 @@ function renderAdminManage(w) {
     '<h3 style="font-weight:700;margin-bottom:14px">Week Management</h3>' +
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:18px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="manage-week" value="'+w+'" min="1" max="'+(appState.data.weekCount||26)+'" style="width:60px"/>' +
-    '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadManage()">Load</button></div>' +
+    weekDropdown("manage-week", w, "loadManage()") +
+    '</div>' +
     '<div style="background:#0f172a;border-radius:8px;padding:12px 16px;margin-bottom:16px">' +
     '<div style="color:#94a3b8;font-size:13px;margin-bottom:4px">Status - Week '+w+'</div>' +
     '<div style="font-weight:700;color:'+(isLocked?"#ef4444":"#16a34a")+'">'+(locked?"Auto-locked (10pm ET Sunday)":manualLocked?"Manually locked":"Open for picks")+'</div></div>' +
@@ -820,8 +804,8 @@ function renderAdminPicks(w) {
     '<h3 style="font-weight:700;margin-bottom:14px">Enter Pick for Player</h3>' +
     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:18px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="apick-week" value="'+w+'" min="1" max="'+(appState.data.weekCount||26)+'" style="width:60px"/>' +
-    '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadAdminPicks()">Load</button></div>' +
+    weekDropdown("apick-week", w, "loadAdminPicks()") +
+    '</div>' +
     '<div id="apick-rows">'+rows+'</div>' +
     '<div style="margin-top:16px;display:flex;gap:10px">' +
     '<button style="padding:10px 24px;background:#2563eb;color:#fff" onclick="saveAdminPicks('+w+')">Save Picks</button>' +
@@ -871,9 +855,7 @@ window.doResetPool = async function(fullReset) {
   if (answer!=="RESET") { flash("Reset cancelled.","#b45309"); return; }
   var newData = defaultData();
   if (!fullReset) {
-    (appState.data.players||[]).forEach(function(p) {
-      newData.players.push({name:p.name, draftOrder:{}, password:""});
-    });
+    (appState.data.players||[]).forEach(function(p) { newData.players.push({name:p.name,draftOrder:{},password:""}); });
     newData.rotation = appState.data.rotation || ROTATION;
     newData.playerCount = appState.data.playerCount || 8;
   }
@@ -899,7 +881,6 @@ function renderPlayer() {
   var weekLocked = isWeekLocked(w);
   var draftOpen = isDraftOpen(w);
   if (draftOpen||weekLocked) processAutoPicks(w);
-
   var statusBox;
   if (myPick) {
     statusBox = '<div style="margin-top:10px;padding:12px 16px;background:#16a34a22;border-radius:8px;border:1px solid #16a34a">Picked: <strong>'+myPick+'</strong>'+(myRuns!==null?' <span style="color:#fbbf24">'+myRuns+' runs</span>':'')+'</div>';
@@ -913,7 +894,6 @@ function renderPlayer() {
     var myDeadline = getPickDeadline(w,playerIndex);
     statusBox = '<div style="margin-top:10px;padding:10px 16px;background:#1e293b;border-radius:8px;color:#94a3b8;font-size:13px">'+pickCheck.reason+(myDeadline&&!weekLocked?' <span style="color:#f59e0b">Your deadline: '+formatET(myDeadline)+' ET.</span>':'')+'</div>';
   }
-
   var teamGrid = "";
   if (!myPick&&pickCheck.can) {
     var btns = MLB_TEAMS.map(function(team) {
@@ -923,15 +903,13 @@ function renderPlayer() {
     }).join("");
     teamGrid = '<div class="card" style="margin-top:16px"><h3 style="font-weight:700;margin-bottom:14px">Select Your Team - Week '+w+'</h3><div class="team-grid">'+btns+'</div></div>';
   }
-
   var histRows = "";
-  for (var wk=1;wk<=(appState.data.weekCount||26);wk++) {
+  for (var wk=1;wk<=weekCount();wk++) {
     var wPick=(appState.data.weeks&&appState.data.weeks[wk]&&appState.data.weeks[wk].picks&&appState.data.weeks[wk].picks[name])||null;
     var wRuns=(wPick&&appState.data.weeks[wk].runs)?appState.data.weeks[wk].runs[wPick]:null;
     if (wPick) histRows+='<tr><td style="color:#94a3b8">Wk '+wk+'</td><td style="font-weight:600">'+wPick+'</td><td style="color:#fbbf24;text-align:right">'+(wRuns!==null?wRuns+" runs":"--")+'</td></tr>';
   }
   var schedInfo = win?'<div style="color:#94a3b8;font-size:12px;margin-top:6px">Draft opens: '+formatET(win.openET)+' ET | Deadline: '+formatET(win.closeET)+' ET</div>':'';
-
   return '<div style="display:flex;gap:8px;margin-bottom:20px">' +
     '<button class="tab-btn active" id="ptab-pick" onclick="playerTab(\'pick\')">Make Pick</button>' +
     '<button class="tab-btn" id="ptab-history" onclick="playerTab(\'history\')">My History</button></div>' +
@@ -966,12 +944,11 @@ window.makePick = async function(team,w) {
 // DRAFT BOARD
 function renderDraftShell() {
   var w = currentWeek();
-  var max = appState.data.weekCount || 26;
   return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">' +
     '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin:0">Draft Board</h2>' +
     '<div style="margin-left:auto;display:flex;gap:8px;align-items:center">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    weekDropdown("draft-week", w, max, "loadDraftTable(Number(this.value))") +
+    weekDropdown("draft-week", w, "loadDraftTable(Number(this.value))") +
     '</div></div>' +
     '<div id="draft-table"><div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div></div>';
 }
@@ -1041,8 +1018,7 @@ async function loadStandingsWeek(w) {
   else banner='<div style="background:#f59e0b22;border:1px solid #f59e0b;border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:13px"><span style="color:#f59e0b;font-weight:700">Runs not yet saved for Week '+w+'.</span> <span style="color:#94a3b8">Admin must save runs via Admin &rarr; Enter Runs for them to count toward Full Season.</span></div>';
   el.innerHTML='<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="week-stand" value="'+w+'" min="1" max="'+(appState.data.weekCount||26)+'" style="width:60px"/>' +
-    '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="reloadWeekStand()">Load</button>' +
+    weekDropdown("week-stand", w, "reloadWeekStand()") +
     '<span style="color:#94a3b8;font-size:12px;margin-left:8px">Live runs auto-fetched</span></div>' +
     banner +
     '<div class="table-wrap"><table>' +
@@ -1077,13 +1053,11 @@ window.reloadWeekStand = function() { loadStandingsWeek(Number(document.getEleme
 // RESEARCH
 function renderResearchShell() {
   var w = currentWeek();
-  var maxWeek = appState.data.weekCount || 26;
   return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">' +
     '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin:0">Schedule Research</h2>' +
     '<div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
-    '<input type="number" id="research-week" value="'+w+'" min="1" max="'+maxWeek+'" style="width:60px;font-size:14px"/>' +
-    '<button style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="loadResearchTable(Number(document.getElementById(\'research-week\').value))">Load</button>' +
+    weekDropdown("research-week", w, "loadResearchTable(Number(this.value))") +
     '<button style="padding:7px 14px;background:#0f172a;color:#94a3b8;font-size:13px;border:1px solid #334155" onclick="refreshResearch()">Refresh</button>' +
     '</div></div>' +
     '<p style="color:#94a3b8;font-size:13px;margin-bottom:14px">Two opponents on same day = doubleheader. @ = away. Click column header to sort.</p>' +
