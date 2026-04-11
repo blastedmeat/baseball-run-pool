@@ -185,7 +185,13 @@ function takenTeamsThisWeek(weekNum) {
   return taken;
 }
 
-function playerHasPassword(player) {
+function activeDraftWeek() {
+  var w = currentWeek();
+  var next = w + 1;
+  if (next <= weekCount() && isDraftOpen(next)) return next;
+  if (isDraftOpen(w)) return w;
+  return w;
+}
   return !!(player && player.password && player.password.trim() !== "");
 }
 
@@ -441,14 +447,15 @@ function renderHome() {
     ? '<p style="color:#94a3b8;margin-top:6px">Season started: ' + appState.data.seasonStart + ' | Current Week: <strong style="color:#38bdf8">' + w + '</strong></p>'
     : '<p style="color:#f59e0b;margin-top:6px">Season not configured. Admin must set up the pool first.</p>';
   var opts = (appState.data.players||[]).map(function(p) { return '<option value="' + p.name + '">' + p.name + '</option>'; }).join("");
+  var draftWeek = activeDraftWeek();
   var draftBanner = "";
-  if (isDraftOpen(w)) {
+  if (isDraftOpen(draftWeek)) {
     draftBanner = '<div style="background:#2563eb22;border:1px solid #2563eb;border-radius:10px;padding:14px 18px;margin-bottom:20px;text-align:center">' +
-      '<div style="font-weight:700;color:#38bdf8;font-size:16px">Draft is open for Week ' + w + '!</div>' +
+      '<div style="font-weight:700;color:#38bdf8;font-size:16px">Draft is open for Week ' + draftWeek + '!</div>' +
       '<div style="color:#94a3b8;font-size:13px;margin-top:4px">Log in and go to <strong style="color:#f1f5f9">My Picks</strong> to make your selection.</div></div>';
-  } else if (isWeekLocked(w)) {
+  } else if (isWeekLocked(currentWeek())) {
     draftBanner = '<div style="background:#ef444422;border:1px solid #ef4444;border-radius:10px;padding:14px 18px;margin-bottom:20px;text-align:center">' +
-      '<div style="font-weight:700;color:#ef4444;font-size:16px">Week ' + w + ' is locked</div>' +
+      '<div style="font-weight:700;color:#ef4444;font-size:16px">Week ' + currentWeek() + ' is locked</div>' +
       '<div style="color:#94a3b8;font-size:13px;margin-top:4px">Draft window has closed. Check Standings for results.</div></div>';
   }
   return '<div style="text-align:center;margin-bottom:28px;padding-top:20px">' +
@@ -530,7 +537,7 @@ window.loginPlayer = async function() {
   }
   errEl.textContent = "";
   appState.user = { name: name, isAdmin: false };
-  appState.view = isDraftOpen(currentWeek()) ? "player" : "home";
+  appState.view = isDraftOpen(activeDraftWeek()) ? "player" : "home";
   render();
 };
 
@@ -867,7 +874,8 @@ window.doResetPool = async function(fullReset) {
 
 // PLAYER
 function renderPlayer() {
-  var name = appState.user.name, w = currentWeek();
+  var name = appState.user.name;
+  var w = activeDraftWeek();
   var picks = (appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)||{};
   var runs  = (appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].runs)||{};
   var myPick = picks[name]||null;
