@@ -248,13 +248,12 @@ function canPlayerPick(weekNum, playerName) {
   if (slotIndex < 0) return { can: false, reason: "Player not found." };
   var myDeadline = getPickDeadline(weekNum, slotIndex);
   if (now >= myDeadline) return { can: false, reason: "Your pick window has closed. A default pick has been assigned." };
-  var mondayStarted = now >= win.mondayBase;
-  if (mondayStarted) {
-    for (var j = 0; j < slotIndex; j++) {
-      var prevDeadline = getPickDeadline(weekNum, j);
-      if (!picks[ordered[j].name] && now < prevDeadline) {
-        return { can: false, reason: "Waiting for " + ordered[j].name + " to pick (deadline: " + formatET(prevDeadline) + " ET)." };
-      }
+  // Enforce slot order the entire time the draft is open —
+  // previous players must have picked OR had their deadline pass
+  for (var j = 0; j < slotIndex; j++) {
+    var prevDeadline = getPickDeadline(weekNum, j);
+    if (!picks[ordered[j].name] && now < prevDeadline) {
+      return { can: false, reason: "Waiting for " + ordered[j].name + " to pick (deadline: " + formatET(prevDeadline) + " ET)." };
     }
   }
   return { can: true, reason: "", deadline: myDeadline, slotIndex: slotIndex };
