@@ -44,7 +44,8 @@ nav{background:#1e293b;border-bottom:2px solid #2563eb;position:sticky;top:0;z-i
 .team-btn.taken{background:#1e1e2e;color:#475569;border-left-color:#ef4444}
 .team-btn.used{background:#1e1e2e;color:#475569;border-left-color:#7c3aed}
 .team-btn:disabled{cursor:not-allowed}
-.hide-mobile{display:inline}
+.modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:#0008;z-index:500;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal-box{background:#1e293b;border-radius:14px;padding:28px 24px;max-width:380px;width:100%;box-shadow:0 8px 40px #0006;border:1px solid #334155}
 .show-mobile{display:none}
 @media(max-width:900px){
   .nav-desktop{display:none}
@@ -62,6 +63,19 @@ nav{background:#1e293b;border-bottom:2px solid #2563eb;position:sticky;top:0;z-i
 <body>
 <nav id="nav"></nav>
 <div id="flash-area"></div>
+<div id="pick-modal" style="display:none" class="modal-overlay">
+  <div class="modal-box">
+    <div style="font-size:18px;font-weight:800;margin-bottom:8px;color:#f1f5f9">Confirm Your Pick</div>
+    <div style="color:#94a3b8;font-size:14px;margin-bottom:16px">You are selecting:</div>
+    <div id="modal-team" style="font-size:22px;font-weight:800;color:#38bdf8;margin-bottom:8px"></div>
+    <div id="modal-week" style="color:#94a3b8;font-size:13px;margin-bottom:20px"></div>
+    <div style="background:#0f172a;border-radius:8px;padding:10px 14px;margin-bottom:20px;color:#f59e0b;font-size:13px">This cannot be changed after confirming.</div>
+    <div style="display:flex;gap:10px">
+      <button onclick="closePickModal()" style="flex:1;padding:11px;background:#334155;color:#f1f5f9;font-size:15px">Cancel</button>
+      <button onclick="confirmPick()" style="flex:1;padding:11px;background:#2563eb;color:#fff;font-size:15px">Confirm Pick</button>
+    </div>
+  </div>
+</div>
 <div id="app"><div style="text-align:center;padding:60px;color:#94a3b8"><span class="spinner"></span> Loading...</div></div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -929,15 +943,36 @@ window.playerTab = function(t) {
   document.getElementById("ptab-history").classList.toggle("active",t==="history");
 };
 
-window.makePick = async function(team,w) {
-  var name=appState.user.name, pickCheck=canPlayerPick(w,name);
-  if (!pickCheck.can) { flash(pickCheck.reason,"#dc2626"); return; }
-  if (takenTeamsThisWeek(w).indexOf(team)>=0) { flash("That team is already taken!","#dc2626"); return; }
-  if (usedTeams(name).indexOf(team)>=0) { flash("You already used that team this season!","#dc2626"); return; }
-  var d=JSON.parse(JSON.stringify(appState.data));
-  d.weeks=d.weeks||{}; d.weeks[w]=d.weeks[w]||{}; d.weeks[w].picks=d.weeks[w].picks||{};
-  d.weeks[w].picks[name]=team;
-  await saveData(d); flash("Picked "+team+" for Week "+w+"!");
+var _pendingPick = null; // { team, weekNum }
+
+window.makePick = function(team, w) {
+  var name = appState.user.name;
+  var pickCheck = canPlayerPick(w, name);
+  if (!pickCheck.can) { flash(pickCheck.reason, "#dc2626"); return; }
+  if (takenTeamsThisWeek(w).indexOf(team) >= 0) { flash("That team is already taken!", "#dc2626"); return; }
+  if (usedTeams(name).indexOf(team) >= 0) { flash("You already used that team this season!", "#dc2626"); return; }
+  _pendingPick = { team: team, weekNum: w };
+  document.getElementById("modal-team").textContent = team;
+  document.getElementById("modal-week").textContent = "Week " + w;
+  document.getElementById("pick-modal").style.display = "flex";
+};
+
+window.closePickModal = function() {
+  _pendingPick = null;
+  document.getElementById("pick-modal").style.display = "none";
+};
+
+window.confirmPick = async function() {
+  if (!_pendingPick) return;
+  var team = _pendingPick.team;
+  var w = _pendingPick.weekNum;
+  var name = appState.user.name;
+  closePickModal();
+  var d = JSON.parse(JSON.stringify(appState.data));
+  d.weeks = d.weeks||{}; d.weeks[w] = d.weeks[w]||{}; d.weeks[w].picks = d.weeks[w].picks||{};
+  d.weeks[w].picks[name] = team;
+  await saveData(d);
+  flash("Picked " + team + " for Week " + w + "!");
 };
 
 function renderDraftShell() {
