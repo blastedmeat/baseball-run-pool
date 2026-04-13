@@ -1109,11 +1109,27 @@ async function loadResearchTable(w, sortBy, sortDir) {
     for (var d = 0; d < 7; d++) { var day = new Date(weekMonday); day.setDate(weekMonday.getDate()+d); days.push(day); }
     var dayLabels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
     function fmt(dt) { return dt.toISOString().split("T")[0]; }
-    var url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(days[0])+"&endDate="+fmt(days[6])+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,status,abstractGameState";
-    var res = await fetch(url); var json = await res.json();
+    var season = new Date(appState.data.seasonStart).getFullYear();
+
+    // Fetch schedule, RS, and RA in parallel
+    var schedUrl = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(days[0])+"&endDate="+fmt(days[6])+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,status,abstractGameState";
+    var rsUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=hitting&fields=teams,stat,runs,team,name";
+    var raUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=pitching&fields=teams,stat,runs,team,name";
+
+    var results = await Promise.all([fetch(schedUrl), fetch(rsUrl), fetch(raUrl)]);
+    var schedJson = await results[0].json();
+    var rsJson    = await results[1].json();
+    var raJson    = await results[2].json();
+
+    // Build RS/RA lookup by team name
+    var rsMap = {}, raMap = {};
+    (rsJson.teams||[]).forEach(function(t) { if (t.team&&t.team.name) rsMap[t.team.name] = (t.stat&&t.stat.runs!==undefined) ? t.stat.runs : "--"; });
+    (raJson.teams||[]).forEach(function(t) { if (t.team&&t.team.name) raMap[t.team.name] = (t.stat&&t.stat.runs!==undefined) ? t.stat.runs : "--"; });
+
+    // Build schedule
     var teamSchedule = {};
     MLB_TEAMS.forEach(function(t) { teamSchedule[t]={0:[],1:[],2:[],3:[],4:[],5:[],6:[]}; });
-    (json.dates||[]).forEach(function(de) {
+    (schedJson.dates||[]).forEach(function(de) {
       var dayIdx=-1;
       for (var di=0;di<days.length;di++) { if (fmt(days[di])===de.date){dayIdx=di;break;} }
       if (dayIdx<0) return;
@@ -1125,12 +1141,14 @@ async function loadResearchTable(w, sortBy, sortDir) {
         if (teamSchedule[hm]) teamSchedule[hm][dayIdx].push({opp:aw,isHome:true});
       });
     });
+
     function totalGames(s) { var t=0; for(var d2=0;d2<7;d2++) t+=s[d2].length; return t; }
     function abbrev(name) { return ABBREV[name]||name.substring(0,3).toUpperCase(); }
     function cellContent(gms) {
       if (gms.length===0) return '<span style="color:#334155">--</span>';
       return gms.map(function(g) { return '<span style="color:#f1f5f9">'+(g.isHome?"":"@")+abbrev(g.opp)+'</span>'; }).join("<br>");
     }
+
     var myPickedTeams = [];
     if (appState.user&&!appState.user.isAdmin) {
       var pname=appState.user.name, allWeeks=appState.data.weeks||{};
@@ -1141,11 +1159,26 @@ async function loadResearchTable(w, sortBy, sortDir) {
       var wp=(appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)||{};
       myThisWeekPick = wp[appState.user.name]||null;
     }
-    var teamList = MLB_TEAMS.map(function(team) { return {name:team,sched:teamSchedule[team],total:totalGames(teamSchedule[team])}; });
-    teamList.sort(function(a,b) {
-      var cmp = sortBy==="games" ? b.total-a.total : (a.name<b.name?-1:a.name>b.name?1:0);
-      return sortDir==="asc"?-cmp:cmp;
+
+    var teamList = MLB_TEAMS.map(function(team) {
+      return {
+        name: team,
+        sched: teamSchedule[team],
+        total: totalGames(teamSchedule[team]),
+        rs: rsMap[team] !== undefined ? rsMap[team] : "--",
+        ra: raMap[team] !== undefined ? raMap[team] : "--"
+      };
     });
+
+    teamList.sort(function(a,b) {
+      var cmp = 0;
+      if (sortBy === "games") cmp = b.total - a.total;
+      else if (sortBy === "rs") cmp = (a.rs==="--"?-1:a.rs) > (b.rs==="--"?-1:b.rs) ? -1 : 1;
+      else if (sortBy === "ra") cmp = (a.ra==="--"?9999:a.ra) > (b.ra==="--"?9999:b.ra) ? -1 : 1;
+      else cmp = a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+      return sortDir==="asc" ? -cmp : cmp;
+    });
+
     function sortArrow(col) {
       if (sortBy!==col) return ' <span style="color:#475569">&#8597;</span>';
       return sortDir==="desc"?' <span style="color:#38bdf8">&#8595;</span>':' <span style="color:#38bdf8">&#8593;</span>';
@@ -1155,9 +1188,15 @@ async function loadResearchTable(w, sortBy, sortDir) {
       return 'onclick="loadResearchTable('+w+',\''+col+'\',\''+nd+'\')"';
     }
     var ths='style="cursor:pointer;user-select:none;white-space:nowrap"';
-    var hdr='<tr><th '+ths+' '+thClick("name")+'>Team'+sortArrow("name")+'</th><th '+ths+' '+thClick("games")+' style="text-align:center;cursor:pointer;user-select:none">Total'+sortArrow("games")+'</th>';
+
+    var hdr='<tr>' +
+      '<th '+ths+' '+thClick("name")+'>Team'+sortArrow("name")+'</th>' +
+      '<th '+ths+' '+thClick("rs")+' style="text-align:center;cursor:pointer;user-select:none">RS'+sortArrow("rs")+'</th>' +
+      '<th '+ths+' '+thClick("ra")+' style="text-align:center;cursor:pointer;user-select:none">RA'+sortArrow("ra")+'</th>' +
+      '<th '+ths+' '+thClick("games")+' style="text-align:center;cursor:pointer;user-select:none">Total'+sortArrow("games")+'</th>';
     for (var dh=0;dh<7;dh++) hdr+='<th style="text-align:center">'+dayLabels[dh]+'<br><span style="font-weight:400;color:#64748b">'+(days[dh].getMonth()+1)+'/'+days[dh].getDate()+'</span></th>';
     hdr+='</tr>';
+
     var teamRows="";
     teamList.forEach(function(item) {
       var isThisWeek=item.name===myThisWeekPick;
@@ -1167,19 +1206,25 @@ async function loadResearchTable(w, sortBy, sortDir) {
       var tc=item.total>=7?"#16a34a":item.total>=5?"#fbbf24":"#ef4444";
       teamRows+='<tr style="'+rowStyle+'">' +
         '<td style="font-weight:600;white-space:nowrap"><span class="hide-mobile">'+item.name+'</span><span class="show-mobile">'+abbrev(item.name)+'</span>'+badge+'</td>' +
+        '<td style="text-align:center;font-weight:700;color:#34d399">'+item.rs+'</td>' +
+        '<td style="text-align:center;font-weight:700;color:#f87171">'+item.ra+'</td>' +
         '<td style="text-align:center;font-weight:800;color:'+tc+'">'+item.total+'</td>';
       for (var dc=0;dc<7;dc++) teamRows+='<td style="text-align:center;font-size:12px;line-height:1.4">'+cellContent(item.sched[dc])+'</td>';
       teamRows+='</tr>';
     });
+
     el.innerHTML='<div style="color:#94a3b8;font-size:12px;margin-bottom:10px">Week '+w+': '+fmt(days[0])+' to '+fmt(days[6])+'</div>' +
       '<div style="font-size:12px;margin-bottom:12px;display:flex;gap:12px;flex-wrap:wrap">' +
       '<span style="color:#16a34a;font-weight:700">7+ games</span>' +
       '<span style="color:#fbbf24;font-weight:700">5-6 games</span>' +
       '<span style="color:#ef4444;font-weight:700">Under 5</span>' +
       '<span style="color:#94a3b8">@ = Away | Two opponents = Doubleheader</span>' +
+      '<span style="color:#34d399;font-weight:700">RS = Runs Scored</span>' +
+      '<span style="color:#f87171;font-weight:700">RA = Runs Allowed</span>' +
       '<span style="background:#16a34a33;border:1px solid #16a34a;padding:1px 6px;border-radius:4px;color:#86efac;font-size:11px">my pick = this week</span>' +
       '<span style="background:#7c3aed22;border:1px solid #7c3aed;padding:1px 6px;border-radius:4px;color:#c4b5fd;font-size:11px">used = earlier this season</span></div>' +
       '<div class="table-wrap"><table><thead>'+hdr+'</thead><tbody>'+teamRows+'</tbody></table></div>';
+
   } catch(e) { el.innerHTML='<p style="color:#ef4444;padding:16px">Failed to load schedule. Please try again.</p>'; }
 }
 window.loadResearchTable = loadResearchTable;
