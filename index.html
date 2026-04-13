@@ -1113,18 +1113,20 @@ async function loadResearchTable(w, sortBy, sortDir) {
 
     // Fetch schedule, RS, and RA in parallel
     var schedUrl = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(days[0])+"&endDate="+fmt(days[6])+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,status,abstractGameState";
-    var rsUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=hitting&fields=teams,stat,runs,team,name";
-    var raUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=pitching&fields=teams,stat,runs,team,name";
+    var rsUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=hitting";
+    var raUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=pitching";
 
     var results = await Promise.all([fetch(schedUrl), fetch(rsUrl), fetch(raUrl)]);
     var schedJson = await results[0].json();
     var rsJson    = await results[1].json();
     var raJson    = await results[2].json();
 
-    // Build RS/RA lookup by team name
+    // Response is nested: json.stats[0].splits[] each with .stat.runs and .team.name
     var rsMap = {}, raMap = {};
-    (rsJson.teams||[]).forEach(function(t) { if (t.team&&t.team.name) rsMap[t.team.name] = (t.stat&&t.stat.runs!==undefined) ? t.stat.runs : "--"; });
-    (raJson.teams||[]).forEach(function(t) { if (t.team&&t.team.name) raMap[t.team.name] = (t.stat&&t.stat.runs!==undefined) ? t.stat.runs : "--"; });
+    var rsSplits = (rsJson.stats && rsJson.stats[0] && rsJson.stats[0].splits) || [];
+    var raSplits = (raJson.stats && raJson.stats[0] && raJson.stats[0].splits) || [];
+    rsSplits.forEach(function(s) { if (s.team&&s.team.name) rsMap[s.team.name] = s.stat&&s.stat.runs!==undefined ? s.stat.runs : "--"; });
+    raSplits.forEach(function(s) { if (s.team&&s.team.name) raMap[s.team.name] = s.stat&&s.stat.runs!==undefined ? s.stat.runs : "--"; });
 
     // Build schedule
     var teamSchedule = {};
