@@ -158,8 +158,17 @@ function currentWeek() {
 function getDraftPosition(playerIndex, weekNum) {
   var rotation = (appState.data && appState.data.rotation) || ROTATION;
   var n = rotation.length;
-  var w = (weekNum - 1) % n;
-  return (rotation[w] + playerIndex) % n;
+  // rotation[i] = 0-indexed pick position for player i in week 1
+  // Each week, every player moves to the next position in the master sequence
+  // Master sequence is the rotation array itself read cyclically
+  // Player i in week w picks at: find where playerIndex sits in rotation,
+  // then advance (weekNum-1) steps forward in the rotation sequence
+  var startPos = -1;
+  for (var i = 0; i < n; i++) {
+    if (rotation[i] === playerIndex) { startPos = i; break; }
+  }
+  if (startPos < 0) return playerIndex % n;
+  return rotation[(startPos + weekNum - 1) % n];
 }
 
 function orderedPlayers(weekNum) {
