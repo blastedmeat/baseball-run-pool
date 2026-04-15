@@ -1048,11 +1048,32 @@ async function loadStandingsWeek(w) {
   if (np===0) banner='<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 16px;margin-bottom:14px;color:#94a3b8;font-size:13px">No picks made for this week yet.</div>';
   else if (ns>=np) banner='<div style="background:#16a34a22;border:1px solid #16a34a;border-radius:8px;padding:10px 16px;margin-bottom:14px;color:#16a34a;font-size:13px;font-weight:600">Week '+w+' runs saved - counting toward Full Season.</div>';
   else banner='<div style="background:#f59e0b22;border:1px solid #f59e0b;border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:13px"><span style="color:#f59e0b;font-weight:700">Runs not yet saved for Week '+w+'.</span> <span style="color:#94a3b8">Admin must save runs via Admin &rarr; Enter Runs for them to count toward Full Season.</span></div>';
+
+  // Find top scoring team across ALL teams this week
+  var topTeam = null, topRuns = -1;
+  for (var team in mergedRuns) {
+    if (mergedRuns[team] > topRuns) { topRuns = mergedRuns[team]; topTeam = team; }
+  }
+  // Check if anyone picked that team
+  var pickedBy = null;
+  for (var pl in picks) { if (picks[pl] === topTeam) { pickedBy = pl; break; } }
+  var topBanner = "";
+  if (topTeam && topRuns > 0) {
+    var topMsg = pickedBy
+      ? 'Picked by <strong style="color:#f1f5f9">' + pickedBy + '</strong>'
+      : '<span style="color:#f59e0b">Not picked by anyone this week</span>';
+    topBanner = '<div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:13px">' +
+      '<span style="color:#94a3b8">Top team this week: </span>' +
+      '<strong style="color:#38bdf8">' + topTeam + '</strong>' +
+      '<span style="color:#fbbf24;font-weight:700;margin-left:8px">' + topRuns + ' runs</span>' +
+      '<span style="color:#94a3b8;margin-left:8px">— ' + topMsg + '</span></div>';
+  }
+
   el.innerHTML='<div style="display:flex;gap:8px;align-items:center;margin-bottom:14px">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
     weekDropdown("week-stand", w, "reloadWeekStand()") +
     '<span style="color:#94a3b8;font-size:12px;margin-left:8px">Live runs auto-fetched</span></div>' +
-    banner +
+    banner + topBanner +
     '<div class="table-wrap"><table>' +
     '<thead><tr><th>Rank</th><th>Player</th><th>Team</th><th style="text-align:right">Runs</th><th style="text-align:right">Winnings</th></tr></thead>' +
     '<tbody>'+trs+'</tbody></table></div>';
