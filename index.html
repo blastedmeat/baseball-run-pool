@@ -985,7 +985,7 @@ window.confirmPick = async function() {
 };
 
 function renderDraftShell() {
-  var w = currentWeek();
+  var w = activeDraftWeek();
   return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">' +
     '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin:0">Draft Board</h2>' +
     '<div style="margin-left:auto;display:flex;gap:8px;align-items:center">' +
@@ -1113,7 +1113,7 @@ window.standTab = function(t) {
 window.reloadWeekStand = function() { loadStandingsWeek(Number(document.getElementById("week-stand").value)); };
 
 function renderResearchShell() {
-  var w = currentWeek();
+  var w = activeDraftWeek();
   return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">' +
     '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin:0">Schedule Research</h2>' +
     '<div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
