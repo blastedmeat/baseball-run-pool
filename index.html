@@ -131,11 +131,14 @@ function defaultData() {
 function getSeasonStart() {
   if (!appState.data || !appState.data.seasonStart) return null;
   var d = new Date(appState.data.seasonStart);
+  // Parse as local date to avoid UTC offset shifting the day
+  var parts = appState.data.seasonStart.split("-");
+  d = new Date(Number(parts[0]), Number(parts[1])-1, Number(parts[2]));
   // Snap to next Monday if not already a Monday (0=Sun,1=Mon,...,6=Sat)
-  var day = d.getUTCDay();
+  var day = d.getDay();
   if (day !== 1) {
     var daysUntilMonday = day === 0 ? 1 : 8 - day;
-    d.setUTCDate(d.getUTCDate() + daysUntilMonday);
+    d.setDate(d.getDate() + daysUntilMonday);
   }
   return d;
 }
