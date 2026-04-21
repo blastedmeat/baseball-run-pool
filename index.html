@@ -363,14 +363,21 @@ function calcWeekStandings(weekNum, overrideRuns) {
 function calcSeasonStandings() {
   var totals = {};
   var players = (appState.data && appState.data.players) || [];
-  for (var i = 0; i < players.length; i++) totals[players[i].name] = { name: players[i].name, totalRuns: 0, totalWinnings: 0, weeks: 0 };
+  for (var i = 0; i < players.length; i++) totals[players[i].name] = { name: players[i].name, totalRuns: 0, totalWinnings: 0, weeks: 0, wins: 0 };
   for (var w = 1; w <= weekCount(); w++) {
+    // Only count weeks where runs have been saved by admin
+    var savedRuns = (appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].runs) || {};
+    if (Object.keys(savedRuns).length === 0) continue;
     var ws = calcWeekStandings(w);
-    var hasData = ws.some(function(r) { return r.runs !== null; });
-    if (!hasData) continue;
+    var withRuns = ws.filter(function(r) { return r.runs !== null; });
+    var maxRuns = withRuns.length > 0 ? Math.max.apply(null, withRuns.map(function(r) { return r.runs; })) : null;
     ws.forEach(function(r) {
       if (!totals[r.name]) return;
-      if (r.runs !== null) { totals[r.name].totalRuns += r.runs; totals[r.name].weeks++; }
+      if (r.runs !== null) {
+        totals[r.name].totalRuns += r.runs;
+        totals[r.name].weeks++;
+        if (r.runs === maxRuns) totals[r.name].wins++;
+      }
       if (r.payout !== null) totals[r.name].totalWinnings += r.payout;
     });
   }
@@ -1145,11 +1152,12 @@ window.standTab = function(t) {
         '<td style="font-weight:800;color:'+(i===0?"#fbbf24":"#94a3b8")+'">'+(i===0?"#1":i+1)+'</td>' +
         '<td style="font-weight:600">'+r.name+'</td>' +
         '<td style="text-align:right;color:#94a3b8">'+r.weeks+'</td>' +
+        '<td style="text-align:right;color:#f59e0b;font-weight:700">'+r.wins+'</td>' +
         '<td style="text-align:right;font-weight:700;color:#38bdf8">'+r.totalRuns+'</td>' +
         '<td style="text-align:right;font-weight:700;color:'+wc+'">'+ws+'</td></tr>';
     }).join("");
     document.getElementById("stand-season").innerHTML='<div class="table-wrap"><table>' +
-      '<thead><tr><th>Rank</th><th>Player</th><th style="text-align:right">Weeks</th><th style="text-align:right">Total Runs</th><th style="text-align:right">Total Won/Owed</th></tr></thead>' +
+      '<thead><tr><th>Rank</th><th>Player</th><th style="text-align:right">Weeks</th><th style="text-align:right">Wins</th><th style="text-align:right">Total Runs</th><th style="text-align:right">Total Won/Owed</th></tr></thead>' +
       '<tbody>'+trs+'</tbody></table></div>';
   }
 };
