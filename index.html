@@ -1182,7 +1182,8 @@ function renderResearchShell() {
 }
 
 async function loadResearchTable(w, sortBy, sortDir) {
-  if (sortBy === undefined) sortBy = _researchSort;
+  var timLoggedIn = appState.user && appState.user.name === "Tim" && !appState.user.isAdmin;
+  if (sortBy === undefined) sortBy = timLoggedIn ? "score" : _researchSort;
   if (sortDir === undefined) sortDir = _researchDir;
   _researchSort = sortBy; _researchDir = sortDir;
   var el = document.getElementById("research-table"); if (!el) return;
@@ -1201,16 +1202,58 @@ async function loadResearchTable(w, sortBy, sortDir) {
     var rsUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=hitting";
     var raUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=pitching";
 
-    var results = await Promise.all([fetch(schedUrl), fetch(rsUrl), fetch(raUrl)]);
+    var isTim = appState.user && appState.user.name === "Tim" && !appState.user.isAdmin;
+    var fetchList = [fetch(schedUrl), fetch(rsUrl), fetch(raUrl)];
+    // For Tim: also fetch recent hitting stats (last 14 days) and relief pitching stats
+    var recentUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=byDateRange&group=hitting&startDate="+fmt(new Date(days[0].getTime()-14*86400000))+"&endDate="+fmt(days[0]);
+    var bullpenUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=pitching&gameType=R";
+    if (isTim) { fetchList.push(fetch(recentUrl)); fetchList.push(fetch(bullpenUrl)); }
+    var results = await Promise.all(fetchList);
     var schedJson = await results[0].json();
     var rsJson    = await results[1].json();
     var raJson    = await results[2].json();
+    var recentJson = isTim ? await results[3].json() : null;
+    var bullpenJson = isTim ? await results[4].json() : null;
 
     var rsMap = {}, raMap = {};
     var rsSplits = (rsJson.stats && rsJson.stats[0] && rsJson.stats[0].splits) || [];
     var raSplits = (raJson.stats && raJson.stats[0] && raJson.stats[0].splits) || [];
     rsSplits.forEach(function(s) { if (s.team&&s.team.name) rsMap[s.team.name] = s.stat&&s.stat.runs!==undefined ? s.stat.runs : "--"; });
     raSplits.forEach(function(s) { if (s.team&&s.team.name) raMap[s.team.name] = s.stat&&s.stat.runs!==undefined ? s.stat.runs : "--"; });
+
+    // Tim-only data: recent R/G and opponent bullpen ERA
+    var recentRgMap = {}, bullpenEraMap = {};
+    if (isTim && recentJson) {
+      var recentSplits = (recentJson.stats && recentJson.stats[0] && recentJson.stats[0].splits) || [];
+      recentSplits.forEach(function(s) {
+        if (s.team && s.team.name && s.stat) {
+          var gp = s.stat.gamesPlayed || 1;
+          var r = s.stat.runs || 0;
+          recentRgMap[s.team.name] = (r / gp).toFixed(2);
+        }
+      });
+    }
+    if (isTim && bullpenJson) {
+      var bpSplits = (bullpenJson.stats && bullpenJson.stats[0] && bullpenJson.stats[0].splits) || [];
+      bpSplits.forEach(function(s) {
+        if (s.team && s.team.name && s.stat && s.stat.era !== undefined) {
+          bullpenEraMap[s.team.name] = parseFloat(s.stat.era);
+        }
+      });
+    }
+
+    var PARK_FACTORS = {
+      "Colorado Rockies":1.3,"Boston Red Sox":1.1,"Cincinnati Reds":1.1,
+      "Philadelphia Phillies":1.08,"Texas Rangers":1.07,"Arizona Diamondbacks":1.06,
+      "Chicago Cubs":1.05,"Toronto Blue Jays":1.04,"Atlanta Braves":1.03,
+      "Milwaukee Brewers":1.03,"Los Angeles Angels":1.02,"Minnesota Twins":1.02,
+      "Baltimore Orioles":1.01,"New York Yankees":1.01,"Kansas City Royals":1.0,
+      "St. Louis Cardinals":1.0,"Washington Nationals":1.0,"Detroit Tigers":0.99,
+      "Chicago White Sox":0.98,"Houston Astros":0.98,"San Francisco Giants":0.98,
+      "Cleveland Guardians":0.97,"Pittsburgh Pirates":0.97,"San Diego Padres":0.97,
+      "Los Angeles Dodgers":0.96,"New York Mets":0.96,"Seattle Mariners":0.96,
+      "Tampa Bay Rays":0.95,"Miami Marlins":0.94,"Athletics":0.96
+    };
 
     var teamSchedule = {};
     MLB_TEAMS.forEach(function(t) { teamSchedule[t]={0:[],1:[],2:[],3:[],4:[],5:[],6:[]}; });
@@ -1255,18 +1298,56 @@ async function loadResearchTable(w, sortBy, sortDir) {
     }
 
     var teamList = MLB_TEAMS.map(function(team) {
-      return {
+      var sched = teamSchedule[team];
+      var total = totalGames(sched);
+      var item = {
         name: team,
-        sched: teamSchedule[team],
-        total: totalGames(teamSchedule[team]),
+        sched: sched,
+        total: total,
         rs: rsMap[team] !== undefined ? rsMap[team] : "--",
-        ra: raMap[team] !== undefined ? raMap[team] : "--"
+        ra: raMap[team] !== undefined ? raMap[team] : "--",
+        score: null
       };
+      if (isTim && total > 0) {
+        // Count home games and collect opponents
+        var homeGames = 0, opponents = [];
+        for (var di = 0; di < 7; di++) {
+          sched[di].forEach(function(g) { if (g.isHome) homeGames++; opponents.push(g.opp); });
+        }
+        // Recent R/G (weight: 30%)
+        var recentRg = recentRgMap[team] ? parseFloat(recentRgMap[team]) : 4.0;
+        var recentScore = Math.min(recentRg / 7.0, 1.0) * 30;
+        // Games (weight: 30%) — 7 games = max
+        var gamesScore = Math.min(total / 7.0, 1.0) * 30;
+        // Opponent bullpen ERA (weight: 20%) — higher ERA = better for us
+        var avgOppBpEra = 0, oppCount = 0;
+        opponents.forEach(function(opp) {
+          if (bullpenEraMap[opp] !== undefined) { avgOppBpEra += bullpenEraMap[opp]; oppCount++; }
+        });
+        avgOppBpEra = oppCount > 0 ? avgOppBpEra / oppCount : 4.0;
+        var bpScore = Math.min(avgOppBpEra / 6.0, 1.0) * 20;
+        // Home game ratio + park factor (weight: 20%)
+        var homeRatio = total > 0 ? homeGames / total : 0.5;
+        var avgParkFactor = 0, pfCount = 0;
+        for (var di2 = 0; di2 < 7; di2++) {
+          sched[di2].forEach(function(g) {
+            var park = g.isHome ? team : g.opp;
+            avgParkFactor += PARK_FACTORS[park] || 1.0;
+            pfCount++;
+          });
+        }
+        avgParkFactor = pfCount > 0 ? avgParkFactor / pfCount : 1.0;
+        var homeScore = (homeRatio * 0.5 + (avgParkFactor - 0.9) * 2.5) * 20;
+        homeScore = Math.max(0, Math.min(homeScore, 20));
+        item.score = Math.round((recentScore + gamesScore + bpScore + homeScore) * 10) / 10;
+      }
+      return item;
     });
 
     teamList.sort(function(a,b) {
       var cmp = 0;
-      if (sortBy === "games") cmp = b.total - a.total;
+      if (sortBy === "score") cmp = (b.score||0) - (a.score||0);
+      else if (sortBy === "games") cmp = b.total - a.total;
       else if (sortBy === "rs") cmp = (a.rs==="--"?-1:a.rs) > (b.rs==="--"?-1:b.rs) ? -1 : 1;
       else if (sortBy === "ra") cmp = (a.ra==="--"?9999:a.ra) > (b.ra==="--"?9999:b.ra) ? -1 : 1;
       else cmp = a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
@@ -1288,6 +1369,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
       '<th '+ths+' '+thClick("rs")+' style="text-align:center;cursor:pointer;user-select:none">RS'+sortArrow("rs")+'</th>' +
       '<th '+ths+' '+thClick("ra")+' style="text-align:center;cursor:pointer;user-select:none">RA'+sortArrow("ra")+'</th>' +
       '<th '+ths+' '+thClick("games")+' style="text-align:center;cursor:pointer;user-select:none">Total'+sortArrow("games")+'</th>';
+    if (isTim) hdr+='<th '+ths+' '+thClick("score")+' style="text-align:center;cursor:pointer;user-select:none">Score'+sortArrow("score")+'</th>';
     for (var dh=0;dh<7;dh++) hdr+='<th style="text-align:center">'+dayLabels[dh]+'<br><span style="font-weight:400;color:#64748b">'+(days[dh].getMonth()+1)+'/'+days[dh].getDate()+'</span></th>';
     hdr+='</tr>';
 
@@ -1299,11 +1381,20 @@ async function loadResearchTable(w, sortBy, sortDir) {
       var rowStyle=isThisWeek?'background:#16a34a33;outline:2px solid #16a34a;outline-offset:-2px;':isDrafted?'background:#7c3aed22;':alreadyUsed?'background:#47556944;':'';
       var badge=isThisWeek?' <span style="font-size:10px;background:#16a34a;padding:1px 5px;border-radius:4px;color:#fff">my pick</span>':isDrafted?' <span style="font-size:10px;background:#7c3aed;padding:1px 5px;border-radius:4px;color:#fff">drafted</span>':alreadyUsed?' <span style="font-size:10px;background:#475569;padding:1px 5px;border-radius:4px;color:#cbd5e1">used</span>':'';
       var tc=item.total>=7?"#16a34a":item.total>=5?"#fbbf24":"#ef4444";
+      var scoreCell = '';
+      if (isTim && item.score !== null) {
+        var sc = item.score;
+        var sColor = sc >= 70 ? '#16a34a' : sc >= 50 ? '#fbbf24' : '#ef4444';
+        scoreCell = '<td style="text-align:center;font-weight:800;color:'+sColor+'">'+sc+'</td>';
+      } else if (isTim) {
+        scoreCell = '<td style="text-align:center;color:#475569">--</td>';
+      }
       teamRows+='<tr style="'+rowStyle+'">' +
         '<td style="font-weight:600;white-space:nowrap"><span class="hide-mobile">'+item.name+'</span><span class="show-mobile">'+abbrev(item.name)+'</span>'+badge+'</td>' +
         '<td style="text-align:center;font-weight:700;color:#34d399">'+item.rs+'</td>' +
         '<td style="text-align:center;font-weight:700;color:#f87171">'+item.ra+'</td>' +
-        '<td style="text-align:center;font-weight:800;color:'+tc+'">'+item.total+'</td>';
+        '<td style="text-align:center;font-weight:800;color:'+tc+'">'+item.total+'</td>' +
+        scoreCell;
       for (var dc=0;dc<7;dc++) teamRows+='<td style="text-align:center;font-size:12px;line-height:1.4">'+cellContent(item.sched[dc])+'</td>';
       teamRows+='</tr>';
     });
