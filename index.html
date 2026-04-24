@@ -500,7 +500,7 @@ function render() {
   if (appState.view === "admin")     app.innerHTML = renderAdmin();
   if (appState.view === "player")    app.innerHTML = renderPlayer();
   if (appState.view === "standings") { app.innerHTML = renderStandingsShell(); processAutoPicks(activeDraftWeek()); loadStandingsWeek(currentWeek()); }
-  if (appState.view === "research")  { app.innerHTML = renderResearchShell(); processAutoPicks(activeDraftWeek()); loadResearchTable(currentWeek(), "games", "desc"); }
+  if (appState.view === "research")  { app.innerHTML = renderResearchShell(); processAutoPicks(activeDraftWeek()); loadResearchTable(activeDraftWeek(), undefined, undefined); }
   if (appState.view === "draft")     { app.innerHTML = renderDraftShell(); processAutoPicks(activeDraftWeek()); loadDraftTable(currentWeek()); }
 }
 
