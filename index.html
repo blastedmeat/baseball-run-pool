@@ -1170,14 +1170,17 @@ window.reloadWeekStand = function() { loadStandingsWeek(Number(document.getEleme
 
 function renderResearchShell() {
   var w = activeDraftWeek();
+  var isTim = appState.user && appState.user.name === "Tim" && !appState.user.isAdmin;
   return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">' +
     '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin:0">Schedule Research</h2>' +
     '<div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
     weekDropdown("research-week", w, "loadResearchTable(Number(this.value))") +
     '<button style="padding:7px 14px;background:#0f172a;color:#94a3b8;font-size:13px;border:1px solid #334155" onclick="refreshResearch()">Refresh</button>' +
+    (isTim ? '<button id="backtest-btn" style="padding:7px 14px;background:#7c3aed;color:#fff;font-size:13px" onclick="runBacktest()">Backtest</button>' : '') +
     '</div></div>' +
     '<p style="color:#94a3b8;font-size:13px;margin-bottom:14px">Two opponents on same day = doubleheader. @ = away. Click column header to sort.</p>' +
+    '<div id="backtest-results"></div>' +
     '<div id="research-table"><div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div></div>';
 }
 
@@ -1339,10 +1342,26 @@ async function loadResearchTable(w, sortBy, sortDir) {
         avgParkFactor = pfCount > 0 ? avgParkFactor / pfCount : 1.0;
         var homeScore = (homeRatio * 0.5 + (avgParkFactor - 0.9) * 2.5) * 20;
         homeScore = Math.max(0, Math.min(homeScore, 20));
-        item.score = Math.round((recentScore + gamesScore + bpScore + homeScore) * 10) / 10;
+        var rawScore = recentScore + gamesScore + bpScore + homeScore;
+        item.score = rawScore;
       }
       return item;
     });
+
+    // Second pass: normalize scores to projected runs (20-45 range)
+    if (isTim) {
+      var scores = teamList.filter(function(t) { return t.score !== null; }).map(function(t) { return t.score; });
+      var minScore = Math.min.apply(null, scores);
+      var maxScore = Math.max.apply(null, scores);
+      var range = maxScore - minScore;
+      if (range < 1) range = 1;
+      teamList.forEach(function(t) {
+        if (t.score !== null) {
+          var normalized = (t.score - minScore) / range;
+          t.score = Math.round((20 + normalized * 25) * 10) / 10;
+        }
+      });
+    }
 
     teamList.sort(function(a,b) {
       var cmp = 0;
@@ -1369,7 +1388,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
       '<th '+ths+' '+thClick("rs")+' style="text-align:center;cursor:pointer;user-select:none">RS'+sortArrow("rs")+'</th>' +
       '<th '+ths+' '+thClick("ra")+' style="text-align:center;cursor:pointer;user-select:none">RA'+sortArrow("ra")+'</th>' +
       '<th '+ths+' '+thClick("games")+' style="text-align:center;cursor:pointer;user-select:none">Total'+sortArrow("games")+'</th>';
-    if (isTim) hdr+='<th '+ths+' '+thClick("score")+' style="text-align:center;cursor:pointer;user-select:none">Score'+sortArrow("score")+'</th>';
+    if (isTim) hdr+='<th '+ths+' '+thClick("score")+' style="text-align:center;cursor:pointer;user-select:none">Proj R'+sortArrow("score")+'</th>';
     for (var dh=0;dh<7;dh++) hdr+='<th style="text-align:center">'+dayLabels[dh]+'<br><span style="font-weight:400;color:#64748b">'+(days[dh].getMonth()+1)+'/'+days[dh].getDate()+'</span></th>';
     hdr+='</tr>';
 
@@ -1384,7 +1403,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
       var scoreCell = '';
       if (isTim && item.score !== null) {
         var sc = item.score;
-        var sColor = sc >= 70 ? '#16a34a' : sc >= 50 ? '#fbbf24' : '#ef4444';
+        var sColor = sc >= 38 ? '#16a34a' : sc >= 30 ? '#fbbf24' : '#ef4444';
         scoreCell = '<td style="text-align:center;font-weight:800;color:'+sColor+'">'+sc+'</td>';
       } else if (isTim) {
         scoreCell = '<td style="text-align:center;color:#475569">--</td>';
@@ -1419,6 +1438,226 @@ window.refreshResearch = function() {
   var w=Number(document.getElementById("research-week").value);
   delete scheduleCache[w];
   loadResearchTable(w);
+};
+
+var BACKTEST_PARK_FACTORS = {
+  "Colorado Rockies":1.3,"Boston Red Sox":1.1,"Cincinnati Reds":1.1,
+  "Philadelphia Phillies":1.08,"Texas Rangers":1.07,"Arizona Diamondbacks":1.06,
+  "Chicago Cubs":1.05,"Toronto Blue Jays":1.04,"Atlanta Braves":1.03,
+  "Milwaukee Brewers":1.03,"Los Angeles Angels":1.02,"Minnesota Twins":1.02,
+  "Baltimore Orioles":1.01,"New York Yankees":1.01,"Kansas City Royals":1.0,
+  "St. Louis Cardinals":1.0,"Washington Nationals":1.0,"Detroit Tigers":0.99,
+  "Chicago White Sox":0.98,"Houston Astros":0.98,"San Francisco Giants":0.98,
+  "Cleveland Guardians":0.97,"Pittsburgh Pirates":0.97,"San Diego Padres":0.97,
+  "Los Angeles Dodgers":0.96,"New York Mets":0.96,"Seattle Mariners":0.96,
+  "Tampa Bay Rays":0.95,"Miami Marlins":0.94,"Athletics":0.96
+};
+
+async function backtestWeek(weekNum) {
+  var start = getSeasonStart();
+  var ws = new Date(start); ws.setDate(start.getDate() + (weekNum-1)*7);
+  var we = new Date(ws); we.setDate(ws.getDate() + 6);
+  function fmt(d) { return d.toISOString().split("T")[0]; }
+  var season = start.getFullYear();
+  var recentStart = new Date(ws.getTime() - 14*86400000);
+
+  var schedUrl = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(ws)+"&endDate="+fmt(we)+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,score,status,abstractGameState,detailedState";
+  var recentUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=byDateRange&group=hitting&startDate="+fmt(recentStart)+"&endDate="+fmt(ws);
+  var bpUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=pitching&gameType=R";
+
+  var results = await Promise.all([fetch(schedUrl), fetch(recentUrl), fetch(bpUrl)]);
+  var schedJson = await results[0].json();
+  var recentJson = await results[1].json();
+  var bpJson = await results[2].json();
+
+  // Recent R/G
+  var recentRgMap = {};
+  var rsSplits = (recentJson.stats && recentJson.stats[0] && recentJson.stats[0].splits) || [];
+  rsSplits.forEach(function(s) {
+    if (s.team && s.team.name && s.stat) {
+      var gp = s.stat.gamesPlayed || 1;
+      recentRgMap[s.team.name] = (s.stat.runs || 0) / gp;
+    }
+  });
+
+  // Bullpen ERA
+  var bullpenEraMap = {};
+  var bpSplits = (bpJson.stats && bpJson.stats[0] && bpJson.stats[0].splits) || [];
+  bpSplits.forEach(function(s) {
+    if (s.team && s.team.name && s.stat && s.stat.era !== undefined) {
+      bullpenEraMap[s.team.name] = parseFloat(s.stat.era);
+    }
+  });
+
+  // Build schedule and actual runs
+  var teamData = {};
+  (schedJson.dates || []).forEach(function(de) {
+    (de.games || []).forEach(function(g) {
+      var aw = g.teams && g.teams.away && g.teams.away.team && g.teams.away.team.name;
+      var hm = g.teams && g.teams.home && g.teams.home.team && g.teams.home.team.name;
+      if (!aw || !hm) return;
+      if (!teamData[aw]) teamData[aw] = { games:0, homeGames:0, opps:[], actual:0 };
+      if (!teamData[hm]) teamData[hm] = { games:0, homeGames:0, opps:[], actual:0 };
+      teamData[aw].games++; teamData[hm].games++;
+      teamData[hm].homeGames++;
+      teamData[aw].opps.push({ opp:hm, isHome:false });
+      teamData[hm].opps.push({ opp:aw, isHome:true });
+      var detail = (g.status && g.status.detailedState) ? g.status.detailedState.toLowerCase() : "";
+      var isFinal = g.status && g.status.abstractGameState === "Final";
+      var isSusp = detail.indexOf("suspended") >= 0;
+      if (isFinal || isSusp) {
+        teamData[aw].actual += (g.teams.away.score || 0);
+        teamData[hm].actual += (g.teams.home.score || 0);
+      }
+    });
+  });
+
+  // Compute raw composite scores
+  var teams = [];
+  for (var team in teamData) {
+    var td = teamData[team];
+    if (td.games === 0) continue;
+    var recentRg = recentRgMap[team] || 4.0;
+    var recentScore = Math.min(recentRg / 7.0, 1.0) * 30;
+    var gamesScore = Math.min(td.games / 7.0, 1.0) * 30;
+    var avgOppBpEra = 0, oppCount = 0;
+    td.opps.forEach(function(o) {
+      if (bullpenEraMap[o.opp] !== undefined) { avgOppBpEra += bullpenEraMap[o.opp]; oppCount++; }
+    });
+    avgOppBpEra = oppCount > 0 ? avgOppBpEra / oppCount : 4.0;
+    var bpScore = Math.min(avgOppBpEra / 6.0, 1.0) * 20;
+    var homeRatio = td.homeGames / td.games;
+    var avgPF = 0, pfC = 0;
+    td.opps.forEach(function(o) {
+      var park = o.isHome ? team : o.opp;
+      avgPF += BACKTEST_PARK_FACTORS[park] || 1.0; pfC++;
+    });
+    avgPF = pfC > 0 ? avgPF / pfC : 1.0;
+    var homeScore = (homeRatio * 0.5 + (avgPF - 0.9) * 2.5) * 20;
+    homeScore = Math.max(0, Math.min(homeScore, 20));
+    var rawScore = recentScore + gamesScore + bpScore + homeScore;
+    teams.push({ name:team, games:td.games, rawScore:rawScore, actual:td.actual });
+  }
+
+  // Normalize to projected runs
+  var scores = teams.map(function(t) { return t.rawScore; });
+  var minS = Math.min.apply(null, scores), maxS = Math.max.apply(null, scores);
+  var range = maxS - minS; if (range < 1) range = 1;
+  teams.forEach(function(t) {
+    t.projected = Math.round((20 + ((t.rawScore - minS) / range) * 25) * 10) / 10;
+  });
+  teams.sort(function(a,b) { return b.projected - a.projected; });
+  return { weekNum:weekNum, start:fmt(ws), end:fmt(we), teams:teams };
+}
+
+window.runBacktest = async function() {
+  var el = document.getElementById("backtest-results"); if (!el) return;
+  var btn = document.getElementById("backtest-btn");
+  if (btn) { btn.innerHTML = '<span class="spinner"></span>Running...'; btn.disabled = true; }
+  el.innerHTML = '<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Running backtest on recent weeks...</div>';
+
+  var cw = currentWeek();
+  var weeksToTest = [];
+  for (var w = Math.max(1, cw - 4); w < cw; w++) weeksToTest.push(w);
+
+  try {
+    var allResults = [];
+    for (var i = 0; i < weeksToTest.length; i++) {
+      allResults.push(await backtestWeek(weeksToTest[i]));
+    }
+
+    var html = '';
+    var overallErrors = [], overallTop5Edge = 0, top5Count = 0;
+
+    allResults.forEach(function(wk) {
+      var teams = wk.teams;
+      var n = teams.length; if (n === 0) return;
+
+      // Stats
+      var sumXY=0, sumX=0, sumY=0, sumX2=0, sumY2=0, totalErr=0;
+      teams.forEach(function(t) {
+        sumX+=t.projected; sumY+=t.actual;
+        sumXY+=t.projected*t.actual;
+        sumX2+=t.projected*t.projected;
+        sumY2+=t.actual*t.actual;
+        totalErr+=Math.abs(t.projected-t.actual);
+        overallErrors.push(Math.abs(t.projected-t.actual));
+      });
+      var corr = (n*sumXY-sumX*sumY) / Math.sqrt((n*sumX2-sumX*sumX)*(n*sumY2-sumY*sumY));
+      if (isNaN(corr)) corr = 0;
+      var mae = totalErr / n;
+      var avgActual = sumY / n;
+      var top5 = teams.slice(0, 5);
+      var top5avg = top5.reduce(function(s,t){return s+t.actual;},0) / 5;
+      var edge = top5avg - avgActual;
+      overallTop5Edge += edge; top5Count++;
+
+      // Rank actual to find where our top 5 projected landed
+      var sortedByActual = teams.slice().sort(function(a,b){return b.actual-a.actual;});
+      var actualRankMap = {};
+      sortedByActual.forEach(function(t,i){actualRankMap[t.name]=i+1;});
+
+      html += '<div class="card" style="margin-bottom:16px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">' +
+        '<div style="font-weight:800;color:#38bdf8;font-size:15px">Week '+wk.weekNum+': '+wk.start+' to '+wk.end+'</div>' +
+        '<div style="display:flex;gap:16px;font-size:12px">' +
+        '<span style="color:#94a3b8">Corr: <strong style="color:'+(corr>=0.3?'#16a34a':corr>=0.1?'#fbbf24':'#ef4444')+'">'+corr.toFixed(3)+'</strong></span>' +
+        '<span style="color:#94a3b8">MAE: <strong style="color:#f59e0b">'+mae.toFixed(1)+'</strong></span>' +
+        '<span style="color:#94a3b8">Top 5 edge: <strong style="color:'+(edge>0?'#16a34a':'#ef4444')+'">'+(edge>=0?'+':'')+edge.toFixed(1)+' runs</strong></span>' +
+        '</div></div>';
+
+      // Top 5 projected table
+      html += '<div style="font-size:12px;color:#94a3b8;margin-bottom:6px;font-weight:600">Top 5 Projected</div>' +
+        '<div class="table-wrap"><table style="margin-bottom:10px">' +
+        '<thead><tr><th>#</th><th>Team</th><th style="text-align:center">Games</th><th style="text-align:right">Proj R</th><th style="text-align:right">Actual</th><th style="text-align:right">Diff</th><th style="text-align:center">Actual Rank</th></tr></thead><tbody>';
+      top5.forEach(function(t,i) {
+        var diff = t.actual - t.projected;
+        var dc = diff >= 0 ? '#16a34a' : '#ef4444';
+        var ar = actualRankMap[t.name] || '--';
+        var arc = ar <= 5 ? '#16a34a' : ar <= 10 ? '#fbbf24' : '#ef4444';
+        html += '<tr><td style="color:#38bdf8;font-weight:800">'+(i+1)+'</td>' +
+          '<td style="font-weight:600">'+t.name+'</td>' +
+          '<td style="text-align:center">'+t.games+'</td>' +
+          '<td style="text-align:right;color:#94a3b8">'+t.projected.toFixed(1)+'</td>' +
+          '<td style="text-align:right;font-weight:700;color:#fbbf24">'+t.actual+'</td>' +
+          '<td style="text-align:right;font-weight:700;color:'+dc+'">'+(diff>=0?'+':'')+diff.toFixed(1)+'</td>' +
+          '<td style="text-align:center;font-weight:700;color:'+arc+'">'+ar+'/'+n+'</td></tr>';
+      });
+      html += '</tbody></table></div>';
+
+      // Actual top 5 (who we missed)
+      html += '<div style="font-size:12px;color:#94a3b8;margin-bottom:6px;font-weight:600">Actual Top 5</div>' +
+        '<div class="table-wrap"><table style="margin-bottom:4px">' +
+        '<thead><tr><th>#</th><th>Team</th><th style="text-align:center">Games</th><th style="text-align:right">Proj R</th><th style="text-align:right">Actual</th></tr></thead><tbody>';
+      sortedByActual.slice(0,5).forEach(function(t,i) {
+        var inTop5Proj = top5.some(function(p){return p.name===t.name;});
+        html += '<tr style="'+(inTop5Proj?'background:#16a34a18':'')+'">' +
+          '<td style="color:#fbbf24;font-weight:800">'+(i+1)+'</td>' +
+          '<td style="font-weight:600">'+t.name+(inTop5Proj?' <span style="font-size:10px;background:#16a34a;padding:1px 5px;border-radius:4px;color:#fff">predicted</span>':'')+'</td>' +
+          '<td style="text-align:center">'+t.games+'</td>' +
+          '<td style="text-align:right;color:#94a3b8">'+t.projected.toFixed(1)+'</td>' +
+          '<td style="text-align:right;font-weight:700;color:#fbbf24">'+t.actual+'</td></tr>';
+      });
+      html += '</tbody></table></div></div>';
+    });
+
+    // Overall summary
+    if (top5Count > 0) {
+      var overallMAE = overallErrors.reduce(function(s,v){return s+v;},0) / overallErrors.length;
+      var avgEdge = overallTop5Edge / top5Count;
+      html = '<div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:14px 18px;margin-bottom:18px">' +
+        '<div style="font-weight:800;color:#f1f5f9;font-size:15px;margin-bottom:8px">Backtest Summary ('+allResults.length+' weeks)</div>' +
+        '<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px">' +
+        '<div style="color:#94a3b8">Avg MAE: <strong style="color:#f59e0b">'+overallMAE.toFixed(1)+' runs</strong></div>' +
+        '<div style="color:#94a3b8">Avg Top 5 edge: <strong style="color:'+(avgEdge>0?'#16a34a':'#ef4444')+'">'+(avgEdge>=0?'+':'')+avgEdge.toFixed(1)+' runs vs avg</strong></div>' +
+        '</div></div>' + html;
+    }
+
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = '<div style="color:#ef4444;padding:16px">Backtest failed: '+e.message+'. Try again.</div>';
+  }
+  if (btn) { btn.innerHTML = 'Backtest'; btn.disabled = false; }
 };
 
 onSnapshot(POOL_DOC, function(snap) {
