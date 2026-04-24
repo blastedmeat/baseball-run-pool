@@ -348,14 +348,19 @@ function calcWeekStandings(weekNum, overrideRuns) {
   rows.sort(function(a,b) { return (b.runs !== null ? b.runs : -9999) - (a.runs !== null ? a.runs : -9999); });
   var withPicks = rows.filter(function(r) { return r.runs !== null; });
   if (withPicks.length > 0) {
-    var winner = withPicks[0];
-    var winnerPayout = 0;
-    for (var k = 1; k < withPicks.length; k++) {
-      var diff = winner.runs - withPicks[k].runs;
-      winnerPayout += diff * 2;
-      withPicks[k].payout = -(diff * 2);
-    }
-    winner.payout = winnerPayout;
+    var topRuns = withPicks[0].runs;
+    var winners = withPicks.filter(function(r) { return r.runs === topRuns; });
+    var losers  = withPicks.filter(function(r) { return r.runs !== topRuns; });
+    // Each loser pays 2x the difference vs the top score
+    var totalPot = 0;
+    losers.forEach(function(r) {
+      var owed = (topRuns - r.runs) * 2;
+      r.payout = -owed;
+      totalPot += owed;
+    });
+    // Winners split the pot equally
+    var winnerShare = totalPot / winners.length;
+    winners.forEach(function(r) { r.payout = winnerShare; });
   }
   return rows;
 }
