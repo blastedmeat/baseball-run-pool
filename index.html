@@ -529,6 +529,17 @@ function renderHome() {
     '<div style="font-size:32px;font-weight:800;color:#38bdf8">Baseball Run Pool</div>' + info + '</div>' +
     (draftBanner ? '<div style="max-width:400px;margin:0 auto">' + draftBanner + '</div>' : '') +
     '<div style="max-width:400px;margin:0 auto" class="card">' +
+    (appState.user && !appState.user.isAdmin ?
+      '<div style="text-align:center;padding:8px 0">' +
+      '<div style="color:#94a3b8;font-size:14px">Logged in as:</div>' +
+      '<div style="font-weight:800;font-size:20px;color:#38bdf8;margin-top:4px">' + appState.user.name + '</div>' +
+      '</div>'
+    : appState.user && appState.user.isAdmin ?
+      '<div style="text-align:center;padding:8px 0">' +
+      '<div style="color:#94a3b8;font-size:14px">Logged in as:</div>' +
+      '<div style="font-weight:800;font-size:20px;color:#7c3aed;margin-top:4px">Commissioner</div>' +
+      '</div>'
+    :
     '<div style="display:flex;gap:8px;margin-bottom:20px">' +
     '<button class="tab-btn active" id="tab-player" onclick="homeTab(\'player\')" style="flex:1">Player Login</button>' +
     '<button class="tab-btn" id="tab-admin" onclick="homeTab(\'admin\')" style="flex:1">Admin Login</button></div>' +
@@ -543,7 +554,8 @@ function renderHome() {
     '<div id="home-admin-panel" style="display:none">' +
     '<input type="password" id="admin-pw" placeholder="Commissioner password" style="margin-bottom:8px" onkeydown="if(event.key===\'Enter\')loginAdmin()"/>' +
     '<div id="pw-error" style="color:#ef4444;font-size:13px;margin-bottom:8px"></div>' +
-    '<button style="width:100%;padding:11px;background:#7c3aed;color:#fff;font-size:16px" onclick="loginAdmin()">Login as Admin</button></div></div>';
+    '<button style="width:100%;padding:11px;background:#7c3aed;color:#fff;font-size:16px" onclick="loginAdmin()">Login as Admin</button></div>'
+    ) + '</div>';
 }
 
 window.homeTab = function(t) {
