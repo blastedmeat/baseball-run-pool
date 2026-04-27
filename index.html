@@ -118,6 +118,7 @@ var ABBREV = {
 };
 var ROTATION = [0,5,4,2,7,1,3,6];
 var appState = { data: null, user: null, view: "home" };
+var _playerTab = "pick";
 var scheduleCache = {};
 var liveRunsCache = {};
 var orderState = [];
@@ -501,7 +502,7 @@ function render() {
   if (!appState.data) { app.innerHTML = '<div style="padding:60px;text-align:center;color:#94a3b8"><span class="spinner"></span> Loading...</div>'; return; }
   if (appState.view === "home")      app.innerHTML = renderHome();
   if (appState.view === "admin")     app.innerHTML = renderAdmin();
-  if (appState.view === "player")    app.innerHTML = renderPlayer();
+  if (appState.view === "player")    { app.innerHTML = renderPlayer(); if (_playerTab !== "pick") playerTab(_playerTab); }
   if (appState.view === "standings") { app.innerHTML = renderStandingsShell(); processAutoPicks(activeDraftWeek()); loadStandingsWeek(currentWeek()); }
   if (appState.view === "research")  { app.innerHTML = renderResearchShell(); processAutoPicks(activeDraftWeek()); loadResearchTable(activeDraftWeek(), undefined, undefined); }
   if (appState.view === "draft")     { app.innerHTML = renderDraftShell(); processAutoPicks(activeDraftWeek()); loadDraftTable(activeDraftWeek()); }
@@ -1068,6 +1069,7 @@ window.toggleAlert = async function(alertType) {
 };
 
 window.playerTab = function(t) {
+  _playerTab = t;
   document.getElementById("player-panel").style.display=t==="pick"?"block":"none";
   document.getElementById("player-history").style.display=t==="history"?"block":"none";
   document.getElementById("player-alerts").style.display=t==="alerts"?"block":"none";
