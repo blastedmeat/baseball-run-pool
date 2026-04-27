@@ -981,7 +981,8 @@ function renderPlayer() {
   var schedInfo = win?'<div style="color:#94a3b8;font-size:12px;margin-top:6px">Draft opens: '+formatET(win.openET)+' ET | Deadline: '+formatET(win.closeET)+' ET</div>':'';
   return '<div style="display:flex;gap:8px;margin-bottom:20px">' +
     '<button class="tab-btn active" id="ptab-pick" onclick="playerTab(\'pick\')">Make Pick</button>' +
-    '<button class="tab-btn" id="ptab-history" onclick="playerTab(\'history\')">My History</button></div>' +
+    '<button class="tab-btn" id="ptab-history" onclick="playerTab(\'history\')">My History</button>' +
+    '<button class="tab-btn" id="ptab-alerts" onclick="playerTab(\'alerts\')">Text Alerts</button></div>' +
     '<div id="player-panel"><div class="card">' +
     '<div style="font-weight:800;font-size:18px;margin-bottom:4px">Week '+w+' - '+name+'</div>' +
     (pos?'<div style="color:#94a3b8;font-size:14px">Draft position this week: <strong style="color:#38bdf8">#'+pos+'</strong></div>':'')+
@@ -989,14 +990,87 @@ function renderPlayer() {
     '<div id="player-history" style="display:none"><div class="card">' +
     '<h3 style="font-weight:700;margin-bottom:14px">My Season History</h3>' +
     (histRows?'<table><thead><tr><th>Week</th><th>Team</th><th style="text-align:right">Runs</th></tr></thead><tbody>'+histRows+'</tbody></table>':'<p style="color:#94a3b8">No picks recorded yet.</p>')+
+    '</div></div>' +
+    renderAlertsPanel(name);
+}
+
+function renderAlertsPanel(name) {
+  var player = (appState.data.players||[]).find(function(p){return p.name===name;});
+  var phone = (player&&player.phone)||"";
+  var alerts = (player&&player.alerts)||{};
+  var dailyStandings = alerts.dailyStandings||false;
+  var yourTurn = alerts.yourTurn||false;
+  var deadlineReminder = alerts.deadlineReminder||false;
+  var hasPhone = phone.length>=10;
+
+  function toggle(id, label, checked, disabled) {
+    var bg = checked ? "#2563eb" : "#334155";
+    var knob = checked ? "translateX(20px)" : "translateX(2px)";
+    var opacity = disabled ? "opacity:.4;pointer-events:none" : "";
+    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #334155;'+opacity+'">' +
+      '<span style="font-size:14px;color:#f1f5f9">'+label+'</span>' +
+      '<div onclick="toggleAlert(\''+id+'\')" style="width:44px;height:24px;background:'+bg+';border-radius:12px;cursor:pointer;position:relative;transition:background .2s">' +
+      '<div style="width:20px;height:20px;background:#fff;border-radius:50%;position:absolute;top:2px;transform:'+knob+';transition:transform .2s"></div></div></div>';
+  }
+
+  return '<div id="player-alerts" style="display:none"><div class="card">' +
+    '<h3 style="font-weight:700;margin-bottom:4px">Text Alerts</h3>' +
+    '<p style="color:#94a3b8;font-size:13px;margin-bottom:16px">Get SMS notifications sent to your phone. Enter your number and choose which alerts you want.</p>' +
+    '<div style="margin-bottom:16px">' +
+    '<label style="color:#94a3b8;font-size:12px;font-weight:700;margin-bottom:4px;display:block">Phone Number</label>' +
+    '<div style="display:flex;gap:8px">' +
+    '<input id="alert-phone" type="tel" placeholder="e.g. 9145551234" value="'+phone+'" style="flex:1" />' +
+    '<button onclick="saveAlertPhone()" style="padding:9px 16px;background:#2563eb;color:#fff;font-size:14px;white-space:nowrap">Save</button>' +
+    '</div>' +
+    '<div id="alert-phone-status" style="font-size:12px;margin-top:4px;color:#94a3b8">'+(hasPhone?'✓ Phone saved':'Enter your 10-digit phone number')+'</div>' +
+    '</div>' +
+    '<div style="margin-bottom:4px;font-weight:700;font-size:13px;color:#94a3b8">CHOOSE YOUR ALERTS</div>' +
+    toggle("dailyStandings","Daily Standings (7am ET)",dailyStandings,!hasPhone) +
+    toggle("yourTurn","Your Turn to Pick",yourTurn,!hasPhone) +
+    toggle("deadlineReminder","1-Hour Deadline Reminder",deadlineReminder,!hasPhone) +
+    (!hasPhone?'<div style="color:#f59e0b;font-size:12px;margin-top:10px">Save your phone number to enable alerts.</div>':'') +
     '</div></div>';
 }
+
+window.saveAlertPhone = async function() {
+  var el = document.getElementById("alert-phone");
+  var statusEl = document.getElementById("alert-phone-status");
+  if (!el) return;
+  var raw = el.value.replace(/\D/g,"");
+  if (raw.length===11 && raw[0]==="1") raw = raw; // keep country code
+  else if (raw.length===10) raw = "1"+raw;
+  else { statusEl.textContent="Enter a valid 10-digit US phone number."; statusEl.style.color="#ef4444"; return; }
+  var name = appState.user.name;
+  var d = JSON.parse(JSON.stringify(appState.data));
+  var idx = d.players.findIndex(function(p){return p.name===name;});
+  if (idx<0) return;
+  d.players[idx].phone = raw;
+  if (!d.players[idx].alerts) d.players[idx].alerts = {dailyStandings:false,yourTurn:false,deadlineReminder:false};
+  await saveData(d);
+  flash("Phone number saved!");
+};
+
+window.toggleAlert = async function(alertType) {
+  var name = appState.user.name;
+  var d = JSON.parse(JSON.stringify(appState.data));
+  var idx = d.players.findIndex(function(p){return p.name===name;});
+  if (idx<0) return;
+  var phone = d.players[idx].phone||"";
+  if (phone.replace(/\D/g,"").length<10) { flash("Save your phone number first.","#dc2626"); return; }
+  if (!d.players[idx].alerts) d.players[idx].alerts = {dailyStandings:false,yourTurn:false,deadlineReminder:false};
+  d.players[idx].alerts[alertType] = !d.players[idx].alerts[alertType];
+  await saveData(d);
+  var status = d.players[idx].alerts[alertType] ? "ON" : "OFF";
+  flash(alertType.replace(/([A-Z])/g," $1").trim()+" alert: "+status);
+};
 
 window.playerTab = function(t) {
   document.getElementById("player-panel").style.display=t==="pick"?"block":"none";
   document.getElementById("player-history").style.display=t==="history"?"block":"none";
+  document.getElementById("player-alerts").style.display=t==="alerts"?"block":"none";
   document.getElementById("ptab-pick").classList.toggle("active",t==="pick");
   document.getElementById("ptab-history").classList.toggle("active",t==="history");
+  document.getElementById("ptab-alerts").classList.toggle("active",t==="alerts");
 };
 
 var _pendingPick = null;
