@@ -627,8 +627,8 @@ window.loginAdmin = function() {
 };
 
 function renderAdmin() {
-  var tabLabels = {setup:"Season Setup",players:"Players & Draft Order",runs:"Enter Runs",manage:"Week Management",picks:"Enter Pick",reset:"Reset Pool"};
-  var tabKeys = ["setup","players","runs","manage","picks","reset"];
+  var tabLabels = {setup:"Season Setup",players:"Players & Draft Order",runs:"Enter Runs",manage:"Week Management",picks:"Enter Pick",alerts:"Text Alerts",reset:"Reset Pool"};
+  var tabKeys = ["setup","players","runs","manage","picks","alerts","reset"];
   var btns = tabKeys.map(function(t,i) {
     return '<button class="tab-btn' + (i===0?' active':'') + '" id="atab-' + t + '" onclick="adminTab(\'' + t + '\')">' + tabLabels[t] + '</button>';
   }).join("");
@@ -638,7 +638,7 @@ function renderAdmin() {
 }
 
 window.adminTab = function(t) {
-  ["setup","players","runs","manage","picks","reset"].forEach(function(x) {
+  ["setup","players","runs","manage","picks","alerts","reset"].forEach(function(x) {
     var el = document.getElementById("atab-"+x); if (el) el.classList.toggle("active",x===t);
   });
   var panel = document.getElementById("admin-panel");
@@ -647,6 +647,7 @@ window.adminTab = function(t) {
   if (t==="runs")    panel.innerHTML = renderAdminRuns(currentWeek());
   if (t==="manage")  panel.innerHTML = renderAdminManage(currentWeek());
   if (t==="picks")   panel.innerHTML = renderAdminPicks(activeDraftWeek());
+  if (t==="alerts")  panel.innerHTML = renderAdminAlerts();
   if (t==="reset")   panel.innerHTML = renderAdminReset();
 };
 
@@ -919,6 +920,33 @@ window.clearAdminPick = async function(w) {
   await saveData(d); flash("All picks cleared for Week "+w+".");
   document.getElementById("admin-panel").innerHTML = renderAdminPicks(w);
 };
+
+function renderAdminAlerts() {
+  var players = appState.data.players || [];
+  var rows = players.map(function(p) {
+    var phone = p.phone || "";
+    var alerts = p.alerts || {};
+    var daily = alerts.dailyStandings ? '<span style="color:#22c55e">ON</span>' : '<span style="color:#64748b">OFF</span>';
+    var turn = alerts.yourTurn ? '<span style="color:#22c55e">ON</span>' : '<span style="color:#64748b">OFF</span>';
+    var deadline = alerts.deadlineReminder ? '<span style="color:#22c55e">ON</span>' : '<span style="color:#64748b">OFF</span>';
+    var phoneDisplay = phone ? phone.replace(/(\d{1})(\d{3})(\d{3})(\d{4})/, '$1-$2-$3-$4') : '<span style="color:#64748b">—</span>';
+    return '<tr>' +
+      '<td style="font-weight:600">' + p.name + '</td>' +
+      '<td>' + phoneDisplay + '</td>' +
+      '<td style="text-align:center">' + daily + '</td>' +
+      '<td style="text-align:center">' + turn + '</td>' +
+      '<td style="text-align:center">' + deadline + '</td></tr>';
+  }).join("");
+
+  var signedUp = players.filter(function(p) { return p.phone; }).length;
+
+  return '<div class="card">' +
+    '<h3 style="font-weight:700;margin-bottom:4px">Text Alert Signups</h3>' +
+    '<p style="color:#94a3b8;font-size:13px;margin-bottom:16px">' + signedUp + ' of ' + players.length + ' players have signed up for alerts.</p>' +
+    '<div style="overflow-x:auto"><table><thead><tr>' +
+    '<th>Player</th><th>Phone</th><th style="text-align:center">Daily</th><th style="text-align:center">Turn</th><th style="text-align:center">Deadline</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
 
 function renderAdminReset() {
   return '<div class="card" style="max-width:480px;border:2px solid #ef4444">' +
