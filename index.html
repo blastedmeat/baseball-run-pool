@@ -1320,7 +1320,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
     function fmt(dt) { return dt.toISOString().split("T")[0]; }
     var season = getSeasonStart().getFullYear();
 
-    var schedUrl = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(days[0])+"&endDate="+fmt(days[6])+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,status,abstractGameState";
+    var schedUrl = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(days[0])+"&endDate="+fmt(days[6])+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,status,abstractGameState,detailedState";
     var rsUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=hitting";
     var raUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=pitching";
 
@@ -1387,6 +1387,8 @@ async function loadResearchTable(w, sortBy, sortDir) {
         var aw=g.teams&&g.teams.away&&g.teams.away.team&&g.teams.away.team.name;
         var hm=g.teams&&g.teams.home&&g.teams.home.team&&g.teams.home.team.name;
         if (!aw||!hm) return;
+        var gDetail = (g.status && g.status.detailedState) ? g.status.detailedState.toLowerCase() : "";
+        if (gDetail.indexOf("postponed") >= 0) return;
         if (teamSchedule[aw]) teamSchedule[aw][dayIdx].push({opp:hm,isHome:false});
         if (teamSchedule[hm]) teamSchedule[hm][dayIdx].push({opp:aw,isHome:true});
       });
@@ -1448,8 +1450,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
         });
         avgOppBpEra = oppCount > 0 ? avgOppBpEra / oppCount : 4.0;
         var bpScore = Math.min(avgOppBpEra / 6.0, 1.0) * 20;
-        // Home game ratio + park factor (weight: 20%)
-        var homeRatio = total > 0 ? homeGames / total : 0.5;
+        // Park factor only (weight: 20%) — based on where games are played
         var avgParkFactor = 0, pfCount = 0;
         for (var di2 = 0; di2 < 7; di2++) {
           sched[di2].forEach(function(g) {
@@ -1459,9 +1460,9 @@ async function loadResearchTable(w, sortBy, sortDir) {
           });
         }
         avgParkFactor = pfCount > 0 ? avgParkFactor / pfCount : 1.0;
-        var homeScore = (homeRatio * 0.5 + (avgParkFactor - 0.9) * 2.5) * 20;
-        homeScore = Math.max(0, Math.min(homeScore, 20));
-        var rawScore = recentScore + gamesScore + bpScore + homeScore;
+        var parkScore = (avgParkFactor - 0.9) * 100;
+        parkScore = Math.max(0, Math.min(parkScore, 20));
+        var rawScore = recentScore + gamesScore + bpScore + parkScore;
         // Fixed scale: raw 40 = 20 runs, raw 80 = 45 runs (0.625 runs per point)
         item.score = Math.round((20 + (rawScore - 40) * 0.625) * 10) / 10;
       }
@@ -1601,6 +1602,8 @@ async function backtestWeek(weekNum) {
       var aw = g.teams && g.teams.away && g.teams.away.team && g.teams.away.team.name;
       var hm = g.teams && g.teams.home && g.teams.home.team && g.teams.home.team.name;
       if (!aw || !hm) return;
+      var detail = (g.status && g.status.detailedState) ? g.status.detailedState.toLowerCase() : "";
+      if (detail.indexOf("postponed") >= 0) return;
       if (!teamData[aw]) teamData[aw] = { games:0, homeGames:0, opps:[], actual:0 };
       if (!teamData[hm]) teamData[hm] = { games:0, homeGames:0, opps:[], actual:0 };
       teamData[aw].games++; teamData[hm].games++;
@@ -1631,16 +1634,15 @@ async function backtestWeek(weekNum) {
     });
     avgOppBpEra = oppCount > 0 ? avgOppBpEra / oppCount : 4.0;
     var bpScore = Math.min(avgOppBpEra / 6.0, 1.0) * 20;
-    var homeRatio = td.homeGames / td.games;
     var avgPF = 0, pfC = 0;
     td.opps.forEach(function(o) {
       var park = o.isHome ? team : o.opp;
       avgPF += BACKTEST_PARK_FACTORS[park] || 1.0; pfC++;
     });
     avgPF = pfC > 0 ? avgPF / pfC : 1.0;
-    var homeScore = (homeRatio * 0.5 + (avgPF - 0.9) * 2.5) * 20;
-    homeScore = Math.max(0, Math.min(homeScore, 20));
-    var rawScore = recentScore + gamesScore + bpScore + homeScore;
+    var parkScore = (avgPF - 0.9) * 100;
+    parkScore = Math.max(0, Math.min(parkScore, 20));
+    var rawScore = recentScore + gamesScore + bpScore + parkScore;
     teams.push({ name:team, games:td.games, rawScore:rawScore, actual:td.actual });
   }
 
