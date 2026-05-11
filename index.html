@@ -118,7 +118,6 @@ var ABBREV = {
 };
 var ROTATION = [0,5,4,2,7,1,3,6];
 var appState = { data: null, user: null, view: "home" };
-var _playerTab = "pick";
 var scheduleCache = {};
 var liveRunsCache = {};
 var orderState = [];
@@ -265,9 +264,6 @@ function activeDraftWeek() {
   var w = currentWeek();
   var next = w + 1;
   if (next <= weekCount() && isDraftOpen(next)) return next;
-  // If next week already has picks (draft completed), show that week
-  var nextPicks = (appState.data.weeks&&appState.data.weeks[next]&&appState.data.weeks[next].picks)||{};
-  if (next <= weekCount() && Object.keys(nextPicks).length > 0) return next;
   return w;
 }
 
@@ -502,10 +498,10 @@ function render() {
   if (!appState.data) { app.innerHTML = '<div style="padding:60px;text-align:center;color:#94a3b8"><span class="spinner"></span> Loading...</div>'; return; }
   if (appState.view === "home")      app.innerHTML = renderHome();
   if (appState.view === "admin")     app.innerHTML = renderAdmin();
-  if (appState.view === "player")    { app.innerHTML = renderPlayer(); if (_playerTab !== "pick") playerTab(_playerTab); }
+  if (appState.view === "player")    app.innerHTML = renderPlayer();
   if (appState.view === "standings") { app.innerHTML = renderStandingsShell(); processAutoPicks(activeDraftWeek()); loadStandingsWeek(currentWeek()); }
   if (appState.view === "research")  { app.innerHTML = renderResearchShell(); processAutoPicks(activeDraftWeek()); loadResearchTable(activeDraftWeek(), undefined, undefined); }
-  if (appState.view === "draft")     { app.innerHTML = renderDraftShell(); processAutoPicks(activeDraftWeek()); loadDraftTable(activeDraftWeek()); }
+  if (appState.view === "draft")     { app.innerHTML = renderDraftShell(); processAutoPicks(activeDraftWeek()); loadDraftTable(currentWeek()); }
 }
 
 function renderHome() {
@@ -520,26 +516,15 @@ function renderHome() {
     draftBanner = '<div style="background:#2563eb22;border:1px solid #2563eb;border-radius:10px;padding:14px 18px;margin-bottom:20px;text-align:center">' +
       '<div style="font-weight:700;color:#38bdf8;font-size:16px">Draft is open for Week ' + dw + '!</div>' +
       '<div style="color:#94a3b8;font-size:13px;margin-top:4px">Log in and go to <strong style="color:#f1f5f9">My Picks</strong> to make your selection.</div></div>';
-  } else if (isWeekLocked(dw)) {
+  } else if (isWeekLocked(w)) {
     draftBanner = '<div style="background:#ef444422;border:1px solid #ef4444;border-radius:10px;padding:14px 18px;margin-bottom:20px;text-align:center">' +
-      '<div style="font-weight:700;color:#ef4444;font-size:16px">Week ' + dw + ' is locked</div>' +
+      '<div style="font-weight:700;color:#ef4444;font-size:16px">Week ' + w + ' is locked</div>' +
       '<div style="color:#94a3b8;font-size:13px;margin-top:4px">Draft window has closed. Check Standings for results.</div></div>';
   }
   return '<div style="text-align:center;margin-bottom:28px;padding-top:20px">' +
     '<div style="font-size:32px;font-weight:800;color:#38bdf8">Baseball Run Pool</div>' + info + '</div>' +
     (draftBanner ? '<div style="max-width:400px;margin:0 auto">' + draftBanner + '</div>' : '') +
     '<div style="max-width:400px;margin:0 auto" class="card">' +
-    (appState.user && !appState.user.isAdmin ?
-      '<div style="text-align:center;padding:8px 0">' +
-      '<div style="color:#94a3b8;font-size:14px">Logged in as:</div>' +
-      '<div style="font-weight:800;font-size:20px;color:#38bdf8;margin-top:4px">' + appState.user.name + '</div>' +
-      '</div>'
-    : appState.user && appState.user.isAdmin ?
-      '<div style="text-align:center;padding:8px 0">' +
-      '<div style="color:#94a3b8;font-size:14px">Logged in as:</div>' +
-      '<div style="font-weight:800;font-size:20px;color:#7c3aed;margin-top:4px">Commissioner</div>' +
-      '</div>'
-    :
     '<div style="display:flex;gap:8px;margin-bottom:20px">' +
     '<button class="tab-btn active" id="tab-player" onclick="homeTab(\'player\')" style="flex:1">Player Login</button>' +
     '<button class="tab-btn" id="tab-admin" onclick="homeTab(\'admin\')" style="flex:1">Admin Login</button></div>' +
@@ -554,8 +539,7 @@ function renderHome() {
     '<div id="home-admin-panel" style="display:none">' +
     '<input type="password" id="admin-pw" placeholder="Commissioner password" style="margin-bottom:8px" onkeydown="if(event.key===\'Enter\')loginAdmin()"/>' +
     '<div id="pw-error" style="color:#ef4444;font-size:13px;margin-bottom:8px"></div>' +
-    '<button style="width:100%;padding:11px;background:#7c3aed;color:#fff;font-size:16px" onclick="loginAdmin()">Login as Admin</button></div>'
-    ) + '</div>';
+    '<button style="width:100%;padding:11px;background:#7c3aed;color:#fff;font-size:16px" onclick="loginAdmin()">Login as Admin</button></div></div>';
 }
 
 window.homeTab = function(t) {
@@ -627,8 +611,8 @@ window.loginAdmin = function() {
 };
 
 function renderAdmin() {
-  var tabLabels = {setup:"Season Setup",players:"Players & Draft Order",runs:"Enter Runs",manage:"Week Management",picks:"Enter Pick",alerts:"Text Alerts",reset:"Reset Pool"};
-  var tabKeys = ["setup","players","runs","manage","picks","alerts","reset"];
+  var tabLabels = {setup:"Season Setup",players:"Players & Draft Order",runs:"Enter Runs",manage:"Week Management",picks:"Enter Pick",reset:"Reset Pool"};
+  var tabKeys = ["setup","players","runs","manage","picks","reset"];
   var btns = tabKeys.map(function(t,i) {
     return '<button class="tab-btn' + (i===0?' active':'') + '" id="atab-' + t + '" onclick="adminTab(\'' + t + '\')">' + tabLabels[t] + '</button>';
   }).join("");
@@ -638,7 +622,7 @@ function renderAdmin() {
 }
 
 window.adminTab = function(t) {
-  ["setup","players","runs","manage","picks","alerts","reset"].forEach(function(x) {
+  ["setup","players","runs","manage","picks","reset"].forEach(function(x) {
     var el = document.getElementById("atab-"+x); if (el) el.classList.toggle("active",x===t);
   });
   var panel = document.getElementById("admin-panel");
@@ -647,7 +631,6 @@ window.adminTab = function(t) {
   if (t==="runs")    panel.innerHTML = renderAdminRuns(currentWeek());
   if (t==="manage")  panel.innerHTML = renderAdminManage(currentWeek());
   if (t==="picks")   panel.innerHTML = renderAdminPicks(activeDraftWeek());
-  if (t==="alerts")  panel.innerHTML = renderAdminAlerts();
   if (t==="reset")   panel.innerHTML = renderAdminReset();
 };
 
@@ -921,33 +904,6 @@ window.clearAdminPick = async function(w) {
   document.getElementById("admin-panel").innerHTML = renderAdminPicks(w);
 };
 
-function renderAdminAlerts() {
-  var players = appState.data.players || [];
-  var rows = players.map(function(p) {
-    var phone = p.phone || "";
-    var alerts = p.alerts || {};
-    var daily = alerts.dailyStandings ? '<span style="color:#22c55e">ON</span>' : '<span style="color:#64748b">OFF</span>';
-    var turn = alerts.yourTurn ? '<span style="color:#22c55e">ON</span>' : '<span style="color:#64748b">OFF</span>';
-    var deadline = alerts.deadlineReminder ? '<span style="color:#22c55e">ON</span>' : '<span style="color:#64748b">OFF</span>';
-    var phoneDisplay = phone ? phone.replace(/(\d{1})(\d{3})(\d{3})(\d{4})/, '$1-$2-$3-$4') : '<span style="color:#64748b">—</span>';
-    return '<tr>' +
-      '<td style="font-weight:600">' + p.name + '</td>' +
-      '<td>' + phoneDisplay + '</td>' +
-      '<td style="text-align:center">' + daily + '</td>' +
-      '<td style="text-align:center">' + turn + '</td>' +
-      '<td style="text-align:center">' + deadline + '</td></tr>';
-  }).join("");
-
-  var signedUp = players.filter(function(p) { return p.phone; }).length;
-
-  return '<div class="card">' +
-    '<h3 style="font-weight:700;margin-bottom:4px">Text Alert Signups</h3>' +
-    '<p style="color:#94a3b8;font-size:13px;margin-bottom:16px">' + signedUp + ' of ' + players.length + ' players have signed up for alerts.</p>' +
-    '<div style="overflow-x:auto"><table><thead><tr>' +
-    '<th>Player</th><th>Phone</th><th style="text-align:center">Daily</th><th style="text-align:center">Turn</th><th style="text-align:center">Deadline</th>' +
-    '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
-}
-
 function renderAdminReset() {
   return '<div class="card" style="max-width:480px;border:2px solid #ef4444">' +
     '<h3 style="font-weight:700;margin-bottom:8px;color:#ef4444">Reset Pool</h3>' +
@@ -1025,8 +981,7 @@ function renderPlayer() {
   var schedInfo = win?'<div style="color:#94a3b8;font-size:12px;margin-top:6px">Draft opens: '+formatET(win.openET)+' ET | Deadline: '+formatET(win.closeET)+' ET</div>':'';
   return '<div style="display:flex;gap:8px;margin-bottom:20px">' +
     '<button class="tab-btn active" id="ptab-pick" onclick="playerTab(\'pick\')">Make Pick</button>' +
-    '<button class="tab-btn" id="ptab-history" onclick="playerTab(\'history\')">My History</button>' +
-    '<button class="tab-btn" id="ptab-alerts" onclick="playerTab(\'alerts\')">Text Alerts</button></div>' +
+    '<button class="tab-btn" id="ptab-history" onclick="playerTab(\'history\')">My History</button></div>' +
     '<div id="player-panel"><div class="card">' +
     '<div style="font-weight:800;font-size:18px;margin-bottom:4px">Week '+w+' - '+name+'</div>' +
     (pos?'<div style="color:#94a3b8;font-size:14px">Draft position this week: <strong style="color:#38bdf8">#'+pos+'</strong></div>':'')+
@@ -1034,88 +989,14 @@ function renderPlayer() {
     '<div id="player-history" style="display:none"><div class="card">' +
     '<h3 style="font-weight:700;margin-bottom:14px">My Season History</h3>' +
     (histRows?'<table><thead><tr><th>Week</th><th>Team</th><th style="text-align:right">Runs</th></tr></thead><tbody>'+histRows+'</tbody></table>':'<p style="color:#94a3b8">No picks recorded yet.</p>')+
-    '</div></div>' +
-    renderAlertsPanel(name);
-}
-
-function renderAlertsPanel(name) {
-  var player = (appState.data.players||[]).find(function(p){return p.name===name;});
-  var phone = (player&&player.phone)||"";
-  var alerts = (player&&player.alerts)||{};
-  var dailyStandings = alerts.dailyStandings||false;
-  var yourTurn = alerts.yourTurn||false;
-  var deadlineReminder = alerts.deadlineReminder||false;
-  var hasPhone = phone.length>=10;
-
-  function toggle(id, label, checked, disabled) {
-    var bg = checked ? "#2563eb" : "#334155";
-    var knob = checked ? "translateX(20px)" : "translateX(2px)";
-    var opacity = disabled ? "opacity:.4;pointer-events:none" : "";
-    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid #334155;'+opacity+'">' +
-      '<span style="font-size:14px;color:#f1f5f9">'+label+'</span>' +
-      '<div onclick="toggleAlert(\''+id+'\')" style="width:44px;height:24px;background:'+bg+';border-radius:12px;cursor:pointer;position:relative;transition:background .2s">' +
-      '<div style="width:20px;height:20px;background:#fff;border-radius:50%;position:absolute;top:2px;transform:'+knob+';transition:transform .2s"></div></div></div>';
-  }
-
-  return '<div id="player-alerts" style="display:none"><div class="card">' +
-    '<h3 style="font-weight:700;margin-bottom:4px">Text Alerts</h3>' +
-    '<p style="color:#94a3b8;font-size:13px;margin-bottom:16px">Get SMS notifications sent to your phone. Enter your number and choose which alerts you want.</p>' +
-    '<div style="margin-bottom:16px">' +
-    '<label style="color:#94a3b8;font-size:12px;font-weight:700;margin-bottom:4px;display:block">Phone Number</label>' +
-    '<div style="display:flex;gap:8px">' +
-    '<input id="alert-phone" type="tel" placeholder="e.g. 9145551234" value="'+phone+'" style="flex:1" />' +
-    '<button onclick="saveAlertPhone()" style="padding:9px 16px;background:#2563eb;color:#fff;font-size:14px;white-space:nowrap">Save</button>' +
-    '</div>' +
-    '<div id="alert-phone-status" style="font-size:12px;margin-top:4px;color:#94a3b8">'+(hasPhone?'✓ Phone saved':'Enter your 10-digit phone number')+'</div>' +
-    '</div>' +
-    '<div style="margin-bottom:4px;font-weight:700;font-size:13px;color:#94a3b8">CHOOSE YOUR ALERTS</div>' +
-    toggle("dailyStandings","Daily Standings (7am ET)",dailyStandings,!hasPhone) +
-    toggle("yourTurn","Your Turn to Pick",yourTurn,!hasPhone) +
-    toggle("deadlineReminder","1-Hour Deadline Reminder",deadlineReminder,!hasPhone) +
-    (!hasPhone?'<div style="color:#f59e0b;font-size:12px;margin-top:10px">Save your phone number to enable alerts.</div>':'') +
     '</div></div>';
 }
 
-window.saveAlertPhone = async function() {
-  var el = document.getElementById("alert-phone");
-  var statusEl = document.getElementById("alert-phone-status");
-  if (!el) return;
-  var raw = el.value.replace(/\D/g,"");
-  if (raw.length===11 && raw[0]==="1") raw = raw; // keep country code
-  else if (raw.length===10) raw = "1"+raw;
-  else { statusEl.textContent="Enter a valid 10-digit US phone number."; statusEl.style.color="#ef4444"; return; }
-  var name = appState.user.name;
-  var d = JSON.parse(JSON.stringify(appState.data));
-  var idx = d.players.findIndex(function(p){return p.name===name;});
-  if (idx<0) return;
-  d.players[idx].phone = raw;
-  if (!d.players[idx].alerts) d.players[idx].alerts = {dailyStandings:false,yourTurn:false,deadlineReminder:false};
-  await saveData(d);
-  flash("Phone number saved!");
-};
-
-window.toggleAlert = async function(alertType) {
-  var name = appState.user.name;
-  var d = JSON.parse(JSON.stringify(appState.data));
-  var idx = d.players.findIndex(function(p){return p.name===name;});
-  if (idx<0) return;
-  var phone = d.players[idx].phone||"";
-  if (phone.replace(/\D/g,"").length<10) { flash("Save your phone number first.","#dc2626"); return; }
-  if (!d.players[idx].alerts) d.players[idx].alerts = {dailyStandings:false,yourTurn:false,deadlineReminder:false};
-  d.players[idx].alerts[alertType] = !d.players[idx].alerts[alertType];
-  await saveData(d);
-  var status = d.players[idx].alerts[alertType] ? "ON" : "OFF";
-  flash(alertType.replace(/([A-Z])/g," $1").trim()+" alert: "+status);
-};
-
 window.playerTab = function(t) {
-  _playerTab = t;
   document.getElementById("player-panel").style.display=t==="pick"?"block":"none";
   document.getElementById("player-history").style.display=t==="history"?"block":"none";
-  document.getElementById("player-alerts").style.display=t==="alerts"?"block":"none";
   document.getElementById("ptab-pick").classList.toggle("active",t==="pick");
   document.getElementById("ptab-history").classList.toggle("active",t==="history");
-  document.getElementById("ptab-alerts").classList.toggle("active",t==="alerts");
 };
 
 var _pendingPick = null;
@@ -1387,6 +1268,8 @@ async function loadResearchTable(w, sortBy, sortDir) {
         var aw=g.teams&&g.teams.away&&g.teams.away.team&&g.teams.away.team.name;
         var hm=g.teams&&g.teams.home&&g.teams.home.team&&g.teams.home.team.name;
         if (!aw||!hm) return;
+        var gDetail = (g.status && g.status.detailedState) ? g.status.detailedState.toLowerCase() : "";
+        if (gDetail.indexOf("postponed") >= 0) return;
         if (teamSchedule[aw]) teamSchedule[aw][dayIdx].push({opp:hm,isHome:false});
         if (teamSchedule[hm]) teamSchedule[hm][dayIdx].push({opp:aw,isHome:true});
       });
@@ -1448,8 +1331,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
         });
         avgOppBpEra = oppCount > 0 ? avgOppBpEra / oppCount : 4.0;
         var bpScore = Math.min(avgOppBpEra / 6.0, 1.0) * 20;
-        // Home game ratio + park factor (weight: 20%)
-        var homeRatio = total > 0 ? homeGames / total : 0.5;
+        // Park factor only (weight: 20%) — based on where games are played
         var avgParkFactor = 0, pfCount = 0;
         for (var di2 = 0; di2 < 7; di2++) {
           sched[di2].forEach(function(g) {
@@ -1459,9 +1341,9 @@ async function loadResearchTable(w, sortBy, sortDir) {
           });
         }
         avgParkFactor = pfCount > 0 ? avgParkFactor / pfCount : 1.0;
-        var homeScore = (homeRatio * 0.5 + (avgParkFactor - 0.9) * 2.5) * 20;
-        homeScore = Math.max(0, Math.min(homeScore, 20));
-        var rawScore = recentScore + gamesScore + bpScore + homeScore;
+        var parkScore = (avgParkFactor - 0.9) * 100;
+        parkScore = Math.max(0, Math.min(parkScore, 20));
+        var rawScore = recentScore + gamesScore + bpScore + parkScore;
         // Fixed scale: raw 40 = 20 runs, raw 80 = 45 runs (0.625 runs per point)
         item.score = Math.round((20 + (rawScore - 40) * 0.625) * 10) / 10;
       }
@@ -1601,13 +1483,14 @@ async function backtestWeek(weekNum) {
       var aw = g.teams && g.teams.away && g.teams.away.team && g.teams.away.team.name;
       var hm = g.teams && g.teams.home && g.teams.home.team && g.teams.home.team.name;
       if (!aw || !hm) return;
+      var detail = (g.status && g.status.detailedState) ? g.status.detailedState.toLowerCase() : "";
+      if (detail.indexOf("postponed") >= 0) return;
       if (!teamData[aw]) teamData[aw] = { games:0, homeGames:0, opps:[], actual:0 };
       if (!teamData[hm]) teamData[hm] = { games:0, homeGames:0, opps:[], actual:0 };
       teamData[aw].games++; teamData[hm].games++;
       teamData[hm].homeGames++;
       teamData[aw].opps.push({ opp:hm, isHome:false });
       teamData[hm].opps.push({ opp:aw, isHome:true });
-      var detail = (g.status && g.status.detailedState) ? g.status.detailedState.toLowerCase() : "";
       var isFinal = g.status && g.status.abstractGameState === "Final";
       var isSusp = detail.indexOf("suspended") >= 0;
       if (isFinal || isSusp) {
@@ -1631,16 +1514,15 @@ async function backtestWeek(weekNum) {
     });
     avgOppBpEra = oppCount > 0 ? avgOppBpEra / oppCount : 4.0;
     var bpScore = Math.min(avgOppBpEra / 6.0, 1.0) * 20;
-    var homeRatio = td.homeGames / td.games;
     var avgPF = 0, pfC = 0;
     td.opps.forEach(function(o) {
       var park = o.isHome ? team : o.opp;
       avgPF += BACKTEST_PARK_FACTORS[park] || 1.0; pfC++;
     });
     avgPF = pfC > 0 ? avgPF / pfC : 1.0;
-    var homeScore = (homeRatio * 0.5 + (avgPF - 0.9) * 2.5) * 20;
-    homeScore = Math.max(0, Math.min(homeScore, 20));
-    var rawScore = recentScore + gamesScore + bpScore + homeScore;
+    var parkScore = (avgPF - 0.9) * 100;
+    parkScore = Math.max(0, Math.min(parkScore, 20));
+    var rawScore = recentScore + gamesScore + bpScore + parkScore;
     teams.push({ name:team, games:td.games, rawScore:rawScore, actual:td.actual });
   }
 
