@@ -264,6 +264,9 @@ function activeDraftWeek() {
   var w = currentWeek();
   var next = w + 1;
   if (next <= weekCount() && isDraftOpen(next)) return next;
+  // If next week already has picks (draft completed), show that week
+  var nextPicks = (appState.data.weeks&&appState.data.weeks[next]&&appState.data.weeks[next].picks)||{};
+  if (next <= weekCount() && Object.keys(nextPicks).length > 0) return next;
   return w;
 }
 
@@ -501,7 +504,7 @@ function render() {
   if (appState.view === "player")    app.innerHTML = renderPlayer();
   if (appState.view === "standings") { app.innerHTML = renderStandingsShell(); processAutoPicks(activeDraftWeek()); loadStandingsWeek(currentWeek()); }
   if (appState.view === "research")  { app.innerHTML = renderResearchShell(); processAutoPicks(activeDraftWeek()); loadResearchTable(activeDraftWeek(), undefined, undefined); }
-  if (appState.view === "draft")     { app.innerHTML = renderDraftShell(); processAutoPicks(activeDraftWeek()); loadDraftTable(currentWeek()); }
+  if (appState.view === "draft")     { app.innerHTML = renderDraftShell(); processAutoPicks(activeDraftWeek()); loadDraftTable(activeDraftWeek()); }
 }
 
 function renderHome() {
@@ -1448,13 +1451,9 @@ async function backtestWeek(weekNum) {
   var season = start.getFullYear();
 
   var schedUrl = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(ws)+"&endDate="+fmt(we)+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,score,status,abstractGameState,detailedState";
-  // Use stats available at draft time: recent 14-day hitting ending day before week starts
-  var draftDate = new Date(ws); draftDate.setDate(draftDate.getDate() - 1);
-  var recentStart = new Date(draftDate.getTime() - 14*86400000);
-  var recentUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=byDateRange&group=hitting&startDate="+fmt(recentStart)+"&endDate="+fmt(draftDate);
-  // Bullpen ERA as of draft time: from MLB season start (March 25) to day before week starts
-  var mlbSeasonStart = new Date(season, 2, 25); // March 25
-  var bpUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=byDateRange&group=pitching&startDate="+fmt(mlbSeasonStart)+"&endDate="+fmt(draftDate)+"&gameType=R";
+  var recentStart = new Date(ws.getTime() - 14*86400000);
+  var recentUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=byDateRange&group=hitting&startDate="+fmt(recentStart)+"&endDate="+fmt(ws);
+  var bpUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=pitching&gameType=R";
 
   var results = await Promise.all([fetch(schedUrl), fetch(recentUrl), fetch(bpUrl)]);
   var schedJson = await results[0].json();
