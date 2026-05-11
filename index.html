@@ -1446,11 +1446,15 @@ async function backtestWeek(weekNum) {
   var we = new Date(ws); we.setDate(ws.getDate() + 6);
   function fmt(d) { return d.toISOString().split("T")[0]; }
   var season = start.getFullYear();
-  var recentStart = new Date(ws.getTime() - 14*86400000);
 
   var schedUrl = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(ws)+"&endDate="+fmt(we)+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,score,status,abstractGameState,detailedState";
-  var recentUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=byDateRange&group=hitting&startDate="+fmt(recentStart)+"&endDate="+fmt(ws);
-  var bpUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=pitching&gameType=R";
+  // Use stats available at draft time: recent 14-day hitting ending day before week starts
+  var draftDate = new Date(ws); draftDate.setDate(draftDate.getDate() - 1);
+  var recentStart = new Date(draftDate.getTime() - 14*86400000);
+  var recentUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=byDateRange&group=hitting&startDate="+fmt(recentStart)+"&endDate="+fmt(draftDate);
+  // Bullpen ERA as of draft time: from MLB season start (March 25) to day before week starts
+  var mlbSeasonStart = new Date(season, 2, 25); // March 25
+  var bpUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=byDateRange&group=pitching&startDate="+fmt(mlbSeasonStart)+"&endDate="+fmt(draftDate)+"&gameType=R";
 
   var results = await Promise.all([fetch(schedUrl), fetch(recentUrl), fetch(bpUrl)]);
   var schedJson = await results[0].json();
