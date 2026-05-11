@@ -1201,7 +1201,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
     function fmt(dt) { return dt.toISOString().split("T")[0]; }
     var season = getSeasonStart().getFullYear();
 
-    var schedUrl = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(days[0])+"&endDate="+fmt(days[6])+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,status,abstractGameState";
+    var schedUrl = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(days[0])+"&endDate="+fmt(days[6])+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,status,abstractGameState,detailedState";
     var rsUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=hitting";
     var raUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=pitching";
 
