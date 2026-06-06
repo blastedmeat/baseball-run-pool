@@ -481,7 +481,7 @@ function renderNav() {
   function nb(v, label) {
     return '<button class="nav-btn' + (view===v?' active':'') + '" onclick="setView(\'' + v + '\');document.getElementById(\'nav-links\').classList.remove(\'open\')">' + label + '</button>';
   }
-  var navItems = nb("home","Home") + nb("draft","Draft Board") + nb("standings","Standings") + nb("research","Research") + nb("history","History") +
+  var navItems = nb("home","Home") + nb("draft","Draft Board") + nb("standings","Standings") + nb("research","Research") + nb("history","History") + nb("hof","Hall of Fame") +
     (user && user.isAdmin ? nb("admin","Admin") : "") +
     (user && !user.isAdmin ? nb("player","My Picks") : "") +
     (user ? '<button class="logout-btn" onclick="doLogout()">Logout (' + user.name + ')</button>' : "");
@@ -506,6 +506,7 @@ function render() {
   if (appState.view === "standings") { app.innerHTML = renderStandingsShell(); processAutoPicks(activeDraftWeek()); loadStandingsWeek(currentWeek()); }
   if (appState.view === "research")  { app.innerHTML = renderResearchShell(); processAutoPicks(activeDraftWeek()); loadResearchTable(activeDraftWeek(), undefined, undefined); }
   if (appState.view === "history")   { app.innerHTML = renderHistory(); }
+  if (appState.view === "hof")       { app.innerHTML = renderHallOfFame(); }
   if (appState.view === "draft")     { app.innerHTML = renderDraftShell(); processAutoPicks(activeDraftWeek()); loadDraftTable(activeDraftWeek()); }
 }
 
@@ -1833,6 +1834,218 @@ function renderHistorySeasonContent(year) {
     '<tbody>'+totalRows+'</tbody></table></div></div>' +
     '<h3 style="font-weight:700;margin-bottom:14px;color:#94a3b8">Week-by-Week</h3>' +
     weeklyHtml;
+}
+
+function buildAllTimeStats() {
+  // Combine historical seasons with live 2026 data
+  var allData = JSON.parse(JSON.stringify(HISTORICAL_SEASONS));
+
+  // Build 2026 from live data
+  var liveWeeks = (appState.data && appState.data.weeks) || {};
+  var players2026 = (appState.data && appState.data.players) || [];
+  if (Object.keys(liveWeeks).length > 0 && players2026.length > 0) {
+    var year2026 = { weekCount: weekCount(), weeks: {}, totals: {} };
+    var playerTotals = {};
+    players2026.forEach(function(p) {
+      playerTotals[p.name] = { money: 0, wins: 0, weeks: 0 };
+    });
+    for (var w = 1; w <= weekCount(); w++) {
+      var savedRuns = (liveWeeks[w] && liveWeeks[w].runs) || {};
+      // Only count weeks where admin has saved runs
+      if (Object.keys(savedRuns).length === 0) continue;
+      var standings = calcWeekStandings(w);
+      var weekPicks = [];
+      var maxRuns = null;
+      standings.forEach(function(s) {
+        if (s.runs !== null && (maxRuns === null || s.runs > maxRuns)) maxRuns = s.runs;
+      });
+      standings.forEach(function(s) {
+        if (s.runs === null) return;
+        weekPicks.push({
+          player: s.name,
+          team: s.team,
+          score: s.runs,
+          money: s.payout
+        });
+        if (!playerTotals[s.name]) playerTotals[s.name] = { money: 0, wins: 0, weeks: 0 };
+        playerTotals[s.name].money += (s.payout || 0);
+        playerTotals[s.name].weeks++;
+        if (s.runs === maxRuns) {
+          // Count tied winners as fractional wins
+          var tiedCount = standings.filter(function(x) { return x.runs === maxRuns; }).length;
+          playerTotals[s.name].wins += (1 / tiedCount);
+        }
+      });
+      if (weekPicks.length > 0) year2026.weeks[w] = weekPicks;
+    }
+    Object.keys(playerTotals).forEach(function(name) {
+      if (playerTotals[name].weeks > 0) {
+        year2026.totals[name] = {
+          money: playerTotals[name].money,
+          wins: playerTotals[name].wins
+        };
+      }
+    });
+    if (Object.keys(year2026.weeks).length > 0) allData[2026] = year2026;
+  }
+
+  // Aggregate across all years
+  var careerStats = {}; // name -> { money, wins, weeks, years }
+  var topWeeks = []; // [{player, team, score, money, year, week}]
+  var topPayouts = []; // same shape, sorted by money
+  var teamCount = {}; // team -> count
+
+  Object.keys(allData).forEach(function(year) {
+    var season = allData[year];
+    var totals = season.totals || {};
+    Object.keys(totals).forEach(function(name) {
+      if (!careerStats[name]) careerStats[name] = { money: 0, wins: 0, years: 0 };
+      careerStats[name].money += (totals[name].money || 0);
+      careerStats[name].wins += (totals[name].wins || 0);
+      careerStats[name].years++;
+    });
+    Object.keys(season.weeks || {}).forEach(function(wk) {
+      var picks = season.weeks[wk] || [];
+      picks.forEach(function(p) {
+        if (p.score !== null && p.score !== undefined) {
+          topWeeks.push({
+            player: p.player, team: p.team, score: p.score,
+            money: p.money, year: year, week: wk
+          });
+        }
+        if (p.money !== null && p.money !== undefined && p.money > 0) {
+          topPayouts.push({
+            player: p.player, team: p.team, score: p.score,
+            money: p.money, year: year, week: wk
+          });
+        }
+        if (p.team) {
+          teamCount[p.team] = (teamCount[p.team] || 0) + 1;
+        }
+      });
+    });
+  });
+
+  topWeeks.sort(function(a, b) { return b.score - a.score; });
+  topPayouts.sort(function(a, b) { return b.money - a.money; });
+
+  var teamRanking = Object.keys(teamCount).map(function(t) {
+    return { team: t, count: teamCount[t] };
+  }).sort(function(a, b) { return b.count - a.count; });
+
+  return { careerStats: careerStats, topWeeks: topWeeks, topPayouts: topPayouts, teamRanking: teamRanking };
+}
+
+function renderHallOfFame() {
+  var stats = buildAllTimeStats();
+  var careerStats = stats.careerStats;
+  var topWeeks = stats.topWeeks;
+  var topPayouts = stats.topPayouts;
+  var teamRanking = stats.teamRanking;
+
+  // Money leaders
+  var moneyPlayers = Object.keys(careerStats).map(function(name) {
+    return { name: name, money: careerStats[name].money, wins: careerStats[name].wins, years: careerStats[name].years };
+  });
+  var moneyLeaders = moneyPlayers.slice().sort(function(a,b) { return b.money - a.money; });
+  var winsLeaders = moneyPlayers.slice().sort(function(a,b) { return b.wins - a.wins; });
+
+  function moneyStr(m) {
+    return m >= 0 ? "+$"+m.toFixed(0) : "-$"+Math.abs(m).toFixed(0);
+  }
+  function moneyColor(m) {
+    return m > 0 ? "#16a34a" : m < 0 ? "#ef4444" : "#475569";
+  }
+
+  // Money Leaders Card
+  var moneyRows = moneyLeaders.map(function(p,i) {
+    var rs = i===0 ? 'background:#16a34a18' : '';
+    return '<tr style="'+rs+'">' +
+      '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i===0?"#1":i+1)+'</td>' +
+      '<td style="font-weight:600">'+p.name+'</td>' +
+      '<td style="text-align:right;font-weight:700;color:'+moneyColor(p.money)+'">'+moneyStr(p.money)+'</td>' +
+      '<td style="text-align:right;color:#94a3b8;font-size:12px">'+p.years+'</td></tr>';
+  }).join("");
+
+  // Wins Leaders Card
+  var winsRows = winsLeaders.map(function(p,i) {
+    var rs = i===0 ? 'background:#16a34a18' : '';
+    return '<tr style="'+rs+'">' +
+      '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i===0?"#1":i+1)+'</td>' +
+      '<td style="font-weight:600">'+p.name+'</td>' +
+      '<td style="text-align:right;font-weight:700;color:#f59e0b">'+p.wins+'</td>' +
+      '<td style="text-align:right;color:#94a3b8;font-size:12px">'+p.years+'</td></tr>';
+  }).join("");
+
+  // Top 10 Weekly Scores
+  var topWeekRows = topWeeks.slice(0, 10).map(function(w,i) {
+    var rs = i===0 ? 'background:#16a34a18' : '';
+    return '<tr style="'+rs+'">' +
+      '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i+1)+'</td>' +
+      '<td style="font-weight:600">'+w.player+'</td>' +
+      '<td style="color:#94a3b8">'+w.team+'</td>' +
+      '<td style="text-align:right;font-weight:800;color:#38bdf8">'+w.score+'</td>' +
+      '<td style="text-align:right;color:'+moneyColor(w.money||0)+';font-weight:700">'+moneyStr(w.money||0)+'</td>' +
+      '<td style="text-align:center;color:#94a3b8;font-size:12px">'+w.year+' W'+w.week+'</td></tr>';
+  }).join("");
+
+  // Top 10 Payouts
+  var topPayoutRows = topPayouts.slice(0, 10).map(function(w,i) {
+    var rs = i===0 ? 'background:#16a34a18' : '';
+    return '<tr style="'+rs+'">' +
+      '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i+1)+'</td>' +
+      '<td style="font-weight:600">'+w.player+'</td>' +
+      '<td style="color:#94a3b8">'+w.team+'</td>' +
+      '<td style="text-align:right;font-weight:800;color:#38bdf8">'+w.score+'</td>' +
+      '<td style="text-align:right;color:#16a34a;font-weight:700">+$'+w.money.toFixed(0)+'</td>' +
+      '<td style="text-align:center;color:#94a3b8;font-size:12px">'+w.year+' W'+w.week+'</td></tr>';
+  }).join("");
+
+  // Most Picked Teams (top 10)
+  var teamRows = teamRanking.slice(0, 10).map(function(t,i) {
+    var rs = i===0 ? 'background:#16a34a18' : '';
+    return '<tr style="'+rs+'">' +
+      '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i+1)+'</td>' +
+      '<td style="font-weight:600">'+t.team+'</td>' +
+      '<td style="text-align:right;font-weight:700;color:#f59e0b">'+t.count+'</td></tr>';
+  }).join("");
+
+  return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">' +
+    '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin:0">Hall of Fame</h2>' +
+    '<span style="color:#94a3b8;font-size:13px">All-time stats (2019-2026)</span></div>' +
+
+    // Top row: Money & Wins side-by-side on wide screens
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px">' +
+
+    '<div class="card"><h3 style="font-weight:700;margin-bottom:12px">💰 All-Time Money</h3>' +
+    '<div class="table-wrap"><table>' +
+    '<thead><tr><th>Rank</th><th>Player</th><th style="text-align:right">Total $</th><th style="text-align:right">Yrs</th></tr></thead>' +
+    '<tbody>'+moneyRows+'</tbody></table></div></div>' +
+
+    '<div class="card"><h3 style="font-weight:700;margin-bottom:12px">🏆 All-Time Wins</h3>' +
+    '<div class="table-wrap"><table>' +
+    '<thead><tr><th>Rank</th><th>Player</th><th style="text-align:right">Wins</th><th style="text-align:right">Yrs</th></tr></thead>' +
+    '<tbody>'+winsRows+'</tbody></table></div></div>' +
+
+    '</div>' +
+
+    // Top Weekly Scores
+    '<div class="card" style="margin-bottom:14px"><h3 style="font-weight:700;margin-bottom:12px">⚾ Top 10 Single-Week Scores</h3>' +
+    '<div class="table-wrap"><table>' +
+    '<thead><tr><th>#</th><th>Player</th><th>Team</th><th style="text-align:right">Runs</th><th style="text-align:right">$</th><th style="text-align:center">When</th></tr></thead>' +
+    '<tbody>'+topWeekRows+'</tbody></table></div></div>' +
+
+    // Top Payouts
+    '<div class="card" style="margin-bottom:14px"><h3 style="font-weight:700;margin-bottom:12px">💵 Top 10 Single-Week Payouts</h3>' +
+    '<div class="table-wrap"><table>' +
+    '<thead><tr><th>#</th><th>Player</th><th>Team</th><th style="text-align:right">Runs</th><th style="text-align:right">$</th><th style="text-align:center">When</th></tr></thead>' +
+    '<tbody>'+topPayoutRows+'</tbody></table></div></div>' +
+
+    // Most Picked Teams
+    '<div class="card" style="margin-bottom:14px"><h3 style="font-weight:700;margin-bottom:12px">🎯 Most Picked Teams</h3>' +
+    '<div class="table-wrap"><table>' +
+    '<thead><tr><th>Rank</th><th>Team</th><th style="text-align:right">Times Picked</th></tr></thead>' +
+    '<tbody>'+teamRows+'</tbody></table></div></div>';
 }
 
 onSnapshot(POOL_DOC, function(snap) {
