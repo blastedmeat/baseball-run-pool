@@ -507,6 +507,7 @@ function render() {
   if (appState.view === "research")  { app.innerHTML = renderResearchShell(); processAutoPicks(activeDraftWeek()); loadResearchTable(activeDraftWeek(), undefined, undefined); }
   if (appState.view === "history")   { app.innerHTML = renderHistory(); }
   if (appState.view === "hof")       { app.innerHTML = renderHallOfFame(); }
+  if (appState.view === "profile")   { app.innerHTML = renderPlayerProfile(appState.profileName); }
   if (appState.view === "draft")     { app.innerHTML = renderDraftShell(); processAutoPicks(activeDraftWeek()); loadDraftTable(activeDraftWeek()); }
 }
 
@@ -1962,7 +1963,7 @@ function renderHallOfFame() {
     var rs = i===0 ? 'background:#16a34a18' : '';
     return '<tr style="'+rs+'">' +
       '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i===0?"#1":i+1)+'</td>' +
-      '<td style="font-weight:600">'+p.name+'</td>' +
+      '<td style="font-weight:600"><a onclick="openProfile(\''+p.name+'\')" style="color:#38bdf8;cursor:pointer;text-decoration:underline">'+p.name+'</a></td>' +
       '<td style="text-align:right;font-weight:700;color:'+moneyColor(p.money)+'">'+moneyStr(p.money)+'</td>' +
       '<td style="text-align:right;color:#94a3b8;font-size:12px">'+p.years+'</td></tr>';
   }).join("");
@@ -1972,7 +1973,7 @@ function renderHallOfFame() {
     var rs = i===0 ? 'background:#16a34a18' : '';
     return '<tr style="'+rs+'">' +
       '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i===0?"#1":i+1)+'</td>' +
-      '<td style="font-weight:600">'+p.name+'</td>' +
+      '<td style="font-weight:600"><a onclick="openProfile(\''+p.name+'\')" style="color:#38bdf8;cursor:pointer;text-decoration:underline">'+p.name+'</a></td>' +
       '<td style="text-align:right;font-weight:700;color:#f59e0b">'+p.wins+'</td>' +
       '<td style="text-align:right;color:#94a3b8;font-size:12px">'+p.years+'</td></tr>';
   }).join("");
@@ -1982,7 +1983,7 @@ function renderHallOfFame() {
     var rs = i===0 ? 'background:#16a34a18' : '';
     return '<tr style="'+rs+'">' +
       '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i+1)+'</td>' +
-      '<td style="font-weight:600">'+w.player+'</td>' +
+      '<td style="font-weight:600"><a onclick="openProfile(\''+w.player+'\')" style="color:#38bdf8;cursor:pointer;text-decoration:underline">'+w.player+'</a></td>' +
       '<td style="color:#94a3b8">'+w.team+'</td>' +
       '<td style="text-align:right;font-weight:800;color:#38bdf8">'+w.score+'</td>' +
       '<td style="text-align:right;color:'+moneyColor(w.money||0)+';font-weight:700">'+moneyStr(w.money||0)+'</td>' +
@@ -1994,7 +1995,7 @@ function renderHallOfFame() {
     var rs = i===0 ? 'background:#16a34a18' : '';
     return '<tr style="'+rs+'">' +
       '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i+1)+'</td>' +
-      '<td style="font-weight:600">'+w.player+'</td>' +
+      '<td style="font-weight:600"><a onclick="openProfile(\''+w.player+'\')" style="color:#38bdf8;cursor:pointer;text-decoration:underline">'+w.player+'</a></td>' +
       '<td style="color:#94a3b8">'+w.team+'</td>' +
       '<td style="text-align:right;font-weight:800;color:#38bdf8">'+w.score+'</td>' +
       '<td style="text-align:right;color:#16a34a;font-weight:700">+$'+w.money.toFixed(0)+'</td>' +
@@ -2045,6 +2046,208 @@ function renderHallOfFame() {
     '<div class="card" style="margin-bottom:14px"><h3 style="font-weight:700;margin-bottom:12px">🎯 Most Picked Teams</h3>' +
     '<div class="table-wrap"><table>' +
     '<thead><tr><th>Rank</th><th>Team</th><th style="text-align:right">Times Picked</th></tr></thead>' +
+    '<tbody>'+teamRows+'</tbody></table></div></div>';
+}
+
+window.openProfile = function(name) {
+  appState.profileName = name;
+  appState.view = "profile";
+  render();
+};
+
+function renderPlayerProfile(playerName) {
+  if (!playerName) return '<p style="color:#94a3b8;padding:16px">No player selected.</p>';
+  var stats = buildAllTimeStats();
+  // Build the merged data again to walk through every pick
+  var allData = JSON.parse(JSON.stringify(HISTORICAL_SEASONS));
+  var liveWeeks = (appState.data && appState.data.weeks) || {};
+  var players2026 = (appState.data && appState.data.players) || [];
+  if (Object.keys(liveWeeks).length > 0 && players2026.length > 0) {
+    var year2026 = { weeks: {}, totals: {} };
+    var playerTotals = {};
+    players2026.forEach(function(p) { playerTotals[p.name] = { money: 0, wins: 0, weeks: 0 }; });
+    for (var w = 1; w <= weekCount(); w++) {
+      var savedRuns = (liveWeeks[w] && liveWeeks[w].runs) || {};
+      if (Object.keys(savedRuns).length === 0) continue;
+      var standings = calcWeekStandings(w);
+      var weekPicks = [];
+      var maxRuns = null;
+      standings.forEach(function(s) { if (s.runs !== null && (maxRuns === null || s.runs > maxRuns)) maxRuns = s.runs; });
+      standings.forEach(function(s) {
+        if (s.runs === null) return;
+        weekPicks.push({ player: s.name, team: s.team, score: s.runs, money: s.payout });
+        if (!playerTotals[s.name]) playerTotals[s.name] = { money: 0, wins: 0, weeks: 0 };
+        playerTotals[s.name].money += (s.payout || 0);
+        playerTotals[s.name].weeks++;
+        if (s.runs === maxRuns) {
+          var tiedCount = standings.filter(function(x) { return x.runs === maxRuns; }).length;
+          playerTotals[s.name].wins += (1 / tiedCount);
+        }
+      });
+      if (weekPicks.length > 0) year2026.weeks[w] = weekPicks;
+    }
+    Object.keys(playerTotals).forEach(function(name) {
+      if (playerTotals[name].weeks > 0) year2026.totals[name] = { money: playerTotals[name].money, wins: playerTotals[name].wins };
+    });
+    if (Object.keys(year2026.weeks).length > 0) allData[2026] = year2026;
+  }
+
+  // Aggregate stats for this player
+  var careerMoney = 0, careerWins = 0, careerWeeks = 0;
+  var bestWeek = null, worstWeek = null;
+  var teamUsage = {}; // team -> { count, totalRuns, totalMoney }
+  var yearStats = {}; // year -> { money, wins, weeks }
+
+  Object.keys(allData).forEach(function(year) {
+    var season = allData[year];
+    Object.keys(season.weeks || {}).forEach(function(wk) {
+      var picks = season.weeks[wk] || [];
+      picks.forEach(function(p) {
+        if (p.player !== playerName) return;
+        if (p.score !== null && p.score !== undefined) {
+          if (!yearStats[year]) yearStats[year] = { money: 0, wins: 0, weeks: 0 };
+          yearStats[year].weeks++;
+          careerWeeks++;
+          if (!bestWeek || p.score > bestWeek.score) bestWeek = { score: p.score, team: p.team, money: p.money, year: year, week: wk };
+          if (!worstWeek || p.score < worstWeek.score) worstWeek = { score: p.score, team: p.team, money: p.money, year: year, week: wk };
+          if (p.team) {
+            if (!teamUsage[p.team]) teamUsage[p.team] = { count: 0, totalRuns: 0, totalMoney: 0 };
+            teamUsage[p.team].count++;
+            teamUsage[p.team].totalRuns += p.score;
+            if (p.money !== null && p.money !== undefined) teamUsage[p.team].totalMoney += p.money;
+          }
+        }
+      });
+    });
+    var t = (season.totals || {})[playerName];
+    if (t) {
+      if (!yearStats[year]) yearStats[year] = { money: 0, wins: 0, weeks: 0 };
+      yearStats[year].money = t.money || 0;
+      yearStats[year].wins = t.wins || 0;
+      careerMoney += (t.money || 0);
+      careerWins += (t.wins || 0);
+    }
+  });
+
+  if (careerWeeks === 0) {
+    return '<button onclick="setView(\'hof\')" style="padding:8px 14px;background:#334155;color:#f1f5f9;font-size:13px;margin-bottom:16px">← Back to Hall of Fame</button>' +
+      '<div class="card"><p style="color:#94a3b8">No data found for '+playerName+'.</p></div>';
+  }
+
+  function moneyStr(m) { return m >= 0 ? "+$"+m.toFixed(0) : "-$"+Math.abs(m).toFixed(0); }
+  function moneyColor(m) { return m > 0 ? "#16a34a" : m < 0 ? "#ef4444" : "#475569"; }
+
+  var winRate = (careerWins / careerWeeks * 100).toFixed(1);
+  var yearsPlayed = Object.keys(yearStats).length;
+
+  // Year-by-year table
+  var years = Object.keys(yearStats).sort(function(a,b) { return Number(b)-Number(a); });
+  var yearRows = years.map(function(y) {
+    var ys = yearStats[y];
+    return '<tr>' +
+      '<td style="font-weight:600">'+y+'</td>' +
+      '<td style="text-align:right;color:#94a3b8">'+ys.weeks+'</td>' +
+      '<td style="text-align:right;color:#f59e0b;font-weight:700">'+ys.wins+'</td>' +
+      '<td style="text-align:right;font-weight:700;color:'+moneyColor(ys.money)+'">'+moneyStr(ys.money)+'</td></tr>';
+  }).join("");
+
+  // Top picked teams for this player
+  var teamList = Object.keys(teamUsage).map(function(t) {
+    return {
+      team: t,
+      count: teamUsage[t].count,
+      avg: teamUsage[t].totalRuns / teamUsage[t].count,
+      money: teamUsage[t].totalMoney
+    };
+  });
+  var mostPickedTeams = teamList.slice().sort(function(a,b) { return b.count - a.count; });
+  var bestMoneyTeams = teamList.slice().sort(function(a,b) { return b.money - a.money; });
+  var worstMoneyTeams = teamList.slice().sort(function(a,b) { return a.money - b.money; });
+
+  var teamRows = mostPickedTeams.slice(0, 10).map(function(t,i) {
+    return '<tr>' +
+      '<td style="color:#94a3b8;font-weight:800">'+(i+1)+'</td>' +
+      '<td style="font-weight:600">'+t.team+'</td>' +
+      '<td style="text-align:right;font-weight:700;color:#f59e0b">'+t.count+'</td>' +
+      '<td style="text-align:right;color:#38bdf8;font-weight:700">'+t.avg.toFixed(1)+'</td>' +
+      '<td style="text-align:right;font-weight:700;color:'+moneyColor(t.money)+'">'+moneyStr(t.money)+'</td></tr>';
+  }).join("");
+
+  var bestMoneyRows = bestMoneyTeams.slice(0, 5).filter(function(t) { return t.money > 0; }).map(function(t,i) {
+    return '<tr>' +
+      '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i+1)+'</td>' +
+      '<td style="font-weight:600">'+t.team+'</td>' +
+      '<td style="text-align:right;font-weight:700;color:#16a34a">'+moneyStr(t.money)+'</td>' +
+      '<td style="text-align:right;color:#94a3b8;font-size:12px">'+t.count+'x</td></tr>';
+  }).join("");
+
+  var worstMoneyRows = worstMoneyTeams.slice(0, 5).filter(function(t) { return t.money < 0; }).map(function(t,i) {
+    return '<tr>' +
+      '<td style="color:'+(i===0?"#ef4444":"#94a3b8")+';font-weight:800">'+(i+1)+'</td>' +
+      '<td style="font-weight:600">'+t.team+'</td>' +
+      '<td style="text-align:right;font-weight:700;color:#ef4444">'+moneyStr(t.money)+'</td>' +
+      '<td style="text-align:right;color:#94a3b8;font-size:12px">'+t.count+'x</td></tr>';
+  }).join("");
+
+  function bestWeekCard(label, week, color) {
+    if (!week) return '';
+    return '<div style="background:#0f172a;border-radius:10px;padding:14px;border-left:3px solid '+color+'">' +
+      '<div style="color:#94a3b8;font-size:12px;margin-bottom:4px">'+label+'</div>' +
+      '<div style="font-size:24px;font-weight:800;color:'+color+';margin-bottom:4px">'+week.score+' runs</div>' +
+      '<div style="font-size:13px;color:#f1f5f9">'+week.team+'</div>' +
+      '<div style="font-size:12px;color:#94a3b8;margin-top:4px">'+week.year+' Week '+week.week+(week.money!==null&&week.money!==undefined?' • <span style="color:'+moneyColor(week.money)+'">'+moneyStr(week.money)+'</span>':'')+'</div></div>';
+  }
+
+  return '<button onclick="setView(\'hof\')" style="padding:8px 14px;background:#334155;color:#f1f5f9;font-size:13px;margin-bottom:16px">← Back to Hall of Fame</button>' +
+    '<div style="margin-bottom:20px">' +
+    '<h2 style="font-weight:800;font-size:28px;color:#38bdf8;margin:0">'+playerName+'</h2>' +
+    '<div style="color:#94a3b8;font-size:13px;margin-top:4px">'+yearsPlayed+' seasons • '+careerWeeks+' weeks played</div></div>' +
+
+    // Career summary cards
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px">' +
+    '<div class="card" style="text-align:center">' +
+    '<div style="color:#94a3b8;font-size:12px;margin-bottom:4px">Total $</div>' +
+    '<div style="font-size:22px;font-weight:800;color:'+moneyColor(careerMoney)+'">'+moneyStr(careerMoney)+'</div></div>' +
+    '<div class="card" style="text-align:center">' +
+    '<div style="color:#94a3b8;font-size:12px;margin-bottom:4px">Career Wins</div>' +
+    '<div style="font-size:22px;font-weight:800;color:#f59e0b">'+careerWins+'</div></div>' +
+    '<div class="card" style="text-align:center">' +
+    '<div style="color:#94a3b8;font-size:12px;margin-bottom:4px">Weeks Played</div>' +
+    '<div style="font-size:22px;font-weight:800;color:#38bdf8">'+careerWeeks+'</div></div>' +
+    '<div class="card" style="text-align:center">' +
+    '<div style="color:#94a3b8;font-size:12px;margin-bottom:4px">Win Rate</div>' +
+    '<div style="font-size:22px;font-weight:800;color:#16a34a">'+winRate+'%</div></div>' +
+    '</div>' +
+
+    // Best/worst week cards
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:18px">' +
+    bestWeekCard("BEST WEEK", bestWeek, "#16a34a") +
+    bestWeekCard("WORST WEEK", worstWeek, "#ef4444") +
+    '</div>' +
+
+    // Year-by-year
+    '<div class="card" style="margin-bottom:14px"><h3 style="font-weight:700;margin-bottom:12px">Year-by-Year</h3>' +
+    '<div class="table-wrap"><table>' +
+    '<thead><tr><th>Year</th><th style="text-align:right">Weeks</th><th style="text-align:right">Wins</th><th style="text-align:right">$</th></tr></thead>' +
+    '<tbody>'+yearRows+'</tbody></table></div></div>' +
+
+    // Best/Worst money teams
+    '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:14px">' +
+    '<div class="card"><h3 style="font-weight:700;margin-bottom:12px">💰 Best Teams (Most $ Won)</h3>' +
+    '<div class="table-wrap"><table>' +
+    '<thead><tr><th>#</th><th>Team</th><th style="text-align:right">Total $</th><th style="text-align:right">Picks</th></tr></thead>' +
+    '<tbody>'+(bestMoneyRows||'<tr><td colspan="4" style="color:#94a3b8;text-align:center">No winning teams</td></tr>')+'</tbody></table></div></div>' +
+
+    '<div class="card"><h3 style="font-weight:700;margin-bottom:12px">📉 Worst Teams (Most $ Lost)</h3>' +
+    '<div class="table-wrap"><table>' +
+    '<thead><tr><th>#</th><th>Team</th><th style="text-align:right">Total $</th><th style="text-align:right">Picks</th></tr></thead>' +
+    '<tbody>'+(worstMoneyRows||'<tr><td colspan="4" style="color:#94a3b8;text-align:center">No losing teams</td></tr>')+'</tbody></table></div></div>' +
+    '</div>' +
+
+    // Most picked teams
+    '<div class="card"><h3 style="font-weight:700;margin-bottom:12px">Most Picked Teams</h3>' +
+    '<div class="table-wrap"><table>' +
+    '<thead><tr><th>#</th><th>Team</th><th style="text-align:right">Times</th><th style="text-align:right">Avg Runs</th><th style="text-align:right">Total $</th></tr></thead>' +
     '<tbody>'+teamRows+'</tbody></table></div></div>';
 }
 
