@@ -2147,6 +2147,18 @@ function renderPlayerProfile(playerName) {
     var season = allData[year];
     Object.keys(season.weeks || {}).forEach(function(wk) {
       var picks = season.weeks[wk] || [];
+      // Find max score this week to determine winners
+      var maxScore = null;
+      picks.forEach(function(p) {
+        if (p.score !== null && p.score !== undefined) {
+          if (maxScore === null || p.score > maxScore) maxScore = p.score;
+        }
+      });
+      // Count tied winners
+      var tiedWinners = picks.filter(function(p) {
+        return p.score !== null && p.score !== undefined && p.score === maxScore;
+      }).length;
+
       picks.forEach(function(p) {
         if (p.player !== playerName) return;
         if (p.score !== null && p.score !== undefined) {
@@ -2157,10 +2169,14 @@ function renderPlayerProfile(playerName) {
           if (!worstWeek || p.score < worstWeek.score) worstWeek = { score: p.score, team: normalizeTeam(p.team), money: p.money, year: year, week: wk };
           if (p.team) {
             var nt = normalizeTeam(p.team);
-            if (!teamUsage[nt]) teamUsage[nt] = { count: 0, totalRuns: 0, totalMoney: 0 };
+            if (!teamUsage[nt]) teamUsage[nt] = { count: 0, totalRuns: 0, totalMoney: 0, wins: 0 };
             teamUsage[nt].count++;
             teamUsage[nt].totalRuns += p.score;
             if (p.money !== null && p.money !== undefined) teamUsage[nt].totalMoney += p.money;
+            // Track wins (fractional for ties)
+            if (maxScore !== null && p.score === maxScore && tiedWinners > 0) {
+              teamUsage[nt].wins += (1 / tiedWinners);
+            }
           }
         }
       });
@@ -2197,24 +2213,32 @@ function renderPlayerProfile(playerName) {
       '<td style="text-align:right;font-weight:700;color:'+moneyColor(ys.money)+'">'+moneyStr(ys.money)+'</td></tr>';
   }).join("");
 
-  // Top picked teams for this player
+  // All teams this player has picked
   var teamList = Object.keys(teamUsage).map(function(t) {
     return {
       team: t,
       count: teamUsage[t].count,
       avg: teamUsage[t].totalRuns / teamUsage[t].count,
-      money: teamUsage[t].totalMoney
+      money: teamUsage[t].totalMoney,
+      wins: teamUsage[t].wins
     };
   });
-  var mostPickedTeams = teamList.slice().sort(function(a,b) { return b.count - a.count; });
+  var mostPickedTeams = teamList.slice().sort(function(a,b) {
+    if (b.count !== a.count) return b.count - a.count;
+    return b.money - a.money;
+  });
   var bestMoneyTeams = teamList.slice().sort(function(a,b) { return b.money - a.money; });
   var worstMoneyTeams = teamList.slice().sort(function(a,b) { return a.money - b.money; });
 
-  var teamRows = mostPickedTeams.slice(0, 10).map(function(t,i) {
+  var teamRows = mostPickedTeams.map(function(t,i) {
+    var losses = t.count - t.wins;
+    var winsDisplay = (t.wins % 1 === 0) ? t.wins : t.wins.toFixed(1);
+    var lossesDisplay = (losses % 1 === 0) ? losses : losses.toFixed(1);
     return '<tr>' +
       '<td style="color:#94a3b8;font-weight:800">'+(i+1)+'</td>' +
       '<td style="font-weight:600">'+t.team+'</td>' +
       '<td style="text-align:right;font-weight:700;color:#f59e0b">'+t.count+'</td>' +
+      '<td style="text-align:center;font-weight:700"><span style="color:#16a34a">'+winsDisplay+'</span><span style="color:#475569">-</span><span style="color:#ef4444">'+lossesDisplay+'</span></td>' +
       '<td style="text-align:right;color:#38bdf8;font-weight:700">'+t.avg.toFixed(1)+'</td>' +
       '<td style="text-align:right;font-weight:700;color:'+moneyColor(t.money)+'">'+moneyStr(t.money)+'</td></tr>';
   }).join("");
@@ -2290,10 +2314,10 @@ function renderPlayerProfile(playerName) {
     '<tbody>'+(worstMoneyRows||'<tr><td colspan="4" style="color:#94a3b8;text-align:center">No losing teams</td></tr>')+'</tbody></table></div></div>' +
     '</div>' +
 
-    // Most picked teams
-    '<div class="card"><h3 style="font-weight:700;margin-bottom:12px">Most Picked Teams</h3>' +
+    // All teams picked
+    '<div class="card"><h3 style="font-weight:700;margin-bottom:12px">All Teams Picked</h3>' +
     '<div class="table-wrap"><table>' +
-    '<thead><tr><th>#</th><th>Team</th><th style="text-align:right">Times</th><th style="text-align:right">Avg Runs</th><th style="text-align:right">Total $</th></tr></thead>' +
+    '<thead><tr><th>#</th><th>Team</th><th style="text-align:right">Times</th><th style="text-align:center">W-L</th><th style="text-align:right">Avg Runs</th><th style="text-align:right">Total $</th></tr></thead>' +
     '<tbody>'+teamRows+'</tbody></table></div></div>';
 }
 
