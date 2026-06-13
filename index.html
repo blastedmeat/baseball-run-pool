@@ -1911,10 +1911,11 @@ function buildTeamStats() {
     Object.keys(season.weeks || {}).forEach(function(wk) {
       (season.weeks[wk] || []).forEach(function(p) {
         if (!p.team) return;
-        if (!teamMap[p.team]) teamMap[p.team] = { team: p.team, count: 0, totalRuns: 0, money: 0 };
-        teamMap[p.team].count++;
-        if (p.score !== null && p.score !== undefined) teamMap[p.team].totalRuns += p.score;
-        if (p.money !== null && p.money !== undefined) teamMap[p.team].money += p.money;
+        var nt = normalizeTeam(p.team);
+        if (!teamMap[nt]) teamMap[nt] = { team: nt, count: 0, totalRuns: 0, money: 0 };
+        teamMap[nt].count++;
+        if (p.score !== null && p.score !== undefined) teamMap[nt].totalRuns += p.score;
+        if (p.money !== null && p.money !== undefined) teamMap[nt].money += p.money;
       });
     });
   });
@@ -1931,7 +1932,7 @@ window.openTeamModal = function(team) {
     var season = allData[year];
     Object.keys(season.weeks || {}).forEach(function(wk) {
       (season.weeks[wk] || []).forEach(function(p) {
-        if (p.team !== team) return;
+        if (normalizeTeam(p.team) !== team) return;
         if (!byYear[year]) byYear[year] = [];
         byYear[year].push({ player: p.player, week: wk, score: p.score, money: p.money });
       });
