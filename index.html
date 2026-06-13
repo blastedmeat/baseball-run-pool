@@ -1882,46 +1882,93 @@ function renderPlayersView() {
   return '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">'+cards+'</div>';
 }
 
+var _teamSort = "count";
+var _teamSortDir = "desc";
+
+window.sortTeams = function(col) {
+  if (_teamSort === col) { _teamSortDir = _teamSortDir === "desc" ? "asc" : "desc"; }
+  else { _teamSort = col; _teamSortDir = "desc"; }
+  document.getElementById("history-tab-content").innerHTML = renderTeamsView();
+};
+
 function renderTeamsView() {
   var teamStats = buildTeamStats();
-  // Sort by times picked desc
-  teamStats.sort(function(a,b) { return b.count - a.count; });
+  var col = _teamSort, dir = _teamSortDir;
+  teamStats.sort(function(a,b) {
+    var cmp;
+    if (col === "team") cmp = a.team < b.team ? -1 : a.team > b.team ? 1 : 0;
+    else if (col === "count") cmp = b.count - a.count;
+    else if (col === "record") cmp = b.wins - a.wins;
+    else if (col === "avg") cmp = b.avg - a.avg;
+    else if (col === "money") cmp = b.money - a.money;
+    else cmp = 0;
+    return dir === "asc" ? -cmp : cmp;
+  });
   function moneyStr(m) { return m >= 0 ? "+$"+m.toFixed(0) : "-$"+Math.abs(m).toFixed(0); }
   function moneyColor(m) { return m > 0 ? "#16a34a" : m < 0 ? "#ef4444" : "#475569"; }
+  function arrow(c) {
+    if (_teamSort !== c) return ' <span style="color:#475569">&#8597;</span>';
+    return _teamSortDir === "desc" ? ' <span style="color:#38bdf8">&#8595;</span>' : ' <span style="color:#38bdf8">&#8593;</span>';
+  }
   var rows = teamStats.map(function(t,i) {
+    var winsDisplay = (t.wins % 1 === 0) ? t.wins : t.wins.toFixed(1);
+    var lossesDisplay = (t.losses % 1 === 0) ? t.losses : t.losses.toFixed(1);
     return '<tr onclick="openTeamModal(\''+t.team.replace(/'/g,"\\'")+'\')" style="cursor:pointer">' +
       '<td style="color:#94a3b8;font-weight:800">'+(i+1)+'</td>' +
       '<td style="font-weight:600"><span style="color:#38bdf8;text-decoration:underline">'+t.team+'</span></td>' +
       '<td style="text-align:right;font-weight:700;color:#f59e0b">'+t.count+'</td>' +
+      '<td style="text-align:center;font-weight:700"><span style="color:#16a34a">'+winsDisplay+'</span><span style="color:#475569">-</span><span style="color:#ef4444">'+lossesDisplay+'</span></td>' +
       '<td style="text-align:right;color:#38bdf8;font-weight:700">'+(t.count>0?t.avg.toFixed(1):"--")+'</td>' +
       '<td style="text-align:right;font-weight:700;color:'+moneyColor(t.money)+'">'+moneyStr(t.money)+'</td></tr>';
   }).join("");
+  var thStyle = 'style="cursor:pointer;user-select:none"';
+  var thStyleR = 'style="cursor:pointer;user-select:none;text-align:right"';
+  var thStyleC = 'style="cursor:pointer;user-select:none;text-align:center"';
   return '<p style="color:#94a3b8;font-size:13px;margin-bottom:14px">Click any team to see who picked them each year.</p>' +
     '<div class="table-wrap"><table>' +
-    '<thead><tr><th>Rank</th><th>Team</th><th style="text-align:right">Times Picked</th><th style="text-align:right">Avg Runs</th><th style="text-align:right">Net $</th></tr></thead>' +
+    '<thead><tr>' +
+    '<th>Rank</th>' +
+    '<th '+thStyle+' onclick="sortTeams(\'team\')">Team'+arrow("team")+'</th>' +
+    '<th '+thStyleR+' onclick="sortTeams(\'count\')">Times Picked'+arrow("count")+'</th>' +
+    '<th '+thStyleC+' onclick="sortTeams(\'record\')">W-L'+arrow("record")+'</th>' +
+    '<th '+thStyleR+' onclick="sortTeams(\'avg\')">Avg Runs'+arrow("avg")+'</th>' +
+    '<th '+thStyleR+' onclick="sortTeams(\'money\')">Net $'+arrow("money")+'</th>' +
+    '</tr></thead>' +
     '<tbody>'+rows+'</tbody></table></div>';
 }
 
 function buildTeamStats() {
   var allData = getMergedSeasonData();
-  var teamMap = {}; // team -> { count, totalRuns, money }
-  MLB_TEAMS.forEach(function(t) { teamMap[t] = { team: t, count: 0, totalRuns: 0, money: 0 }; });
+  var teamMap = {}; // team -> { count, totalRuns, money, wins }
+  MLB_TEAMS.forEach(function(t) { teamMap[t] = { team: t, count: 0, totalRuns: 0, money: 0, wins: 0 }; });
   Object.keys(allData).forEach(function(year) {
     var season = allData[year];
     Object.keys(season.weeks || {}).forEach(function(wk) {
-      (season.weeks[wk] || []).forEach(function(p) {
+      var picks = season.weeks[wk] || [];
+      // Determine the winning score for this week
+      var maxScore = null;
+      picks.forEach(function(p) {
+        if (p.score !== null && p.score !== undefined && (maxScore === null || p.score > maxScore)) maxScore = p.score;
+      });
+      var tiedWinners = picks.filter(function(p) { return p.score === maxScore; }).length;
+      picks.forEach(function(p) {
         if (!p.team) return;
         var nt = normalizeTeam(p.team);
-        if (!teamMap[nt]) teamMap[nt] = { team: nt, count: 0, totalRuns: 0, money: 0 };
+        if (!teamMap[nt]) teamMap[nt] = { team: nt, count: 0, totalRuns: 0, money: 0, wins: 0 };
         teamMap[nt].count++;
-        if (p.score !== null && p.score !== undefined) teamMap[nt].totalRuns += p.score;
+        if (p.score !== null && p.score !== undefined) {
+          teamMap[nt].totalRuns += p.score;
+          if (p.score === maxScore && maxScore !== null) {
+            teamMap[nt].wins += (1 / tiedWinners);
+          }
+        }
         if (p.money !== null && p.money !== undefined) teamMap[nt].money += p.money;
       });
     });
   });
   return Object.keys(teamMap).map(function(t) {
     var tm = teamMap[t];
-    return { team: t, count: tm.count, avg: tm.count > 0 ? tm.totalRuns/tm.count : 0, money: tm.money };
+    return { team: t, count: tm.count, avg: tm.count > 0 ? tm.totalRuns/tm.count : 0, money: tm.money, wins: tm.wins, losses: tm.count - tm.wins };
   });
 }
 
@@ -2230,6 +2277,23 @@ window.openProfile = function(name) {
   render();
 };
 
+var _profileYearSort = "year";
+var _profileYearDir = "desc";
+var _profileTeamSort = "count";
+var _profileTeamDir = "desc";
+
+window.sortProfileYear = function(col) {
+  if (_profileYearSort === col) { _profileYearDir = _profileYearDir === "desc" ? "asc" : "desc"; }
+  else { _profileYearSort = col; _profileYearDir = "desc"; }
+  render();
+};
+
+window.sortProfileTeam = function(col) {
+  if (_profileTeamSort === col) { _profileTeamDir = _profileTeamDir === "desc" ? "asc" : "desc"; }
+  else { _profileTeamSort = col; _profileTeamDir = "desc"; }
+  render();
+};
+
 function renderPlayerProfile(playerName) {
   if (!playerName) return '<p style="color:#94a3b8;padding:16px">No player selected.</p>';
   var allData = getMergedSeasonData();
@@ -2300,7 +2364,17 @@ function renderPlayerProfile(playerName) {
   var yearsPlayed = Object.keys(yearStats).length;
 
   // Year-by-year table
-  var years = Object.keys(yearStats).sort(function(a,b) { return Number(b)-Number(a); });
+  var years = Object.keys(yearStats);
+  years.sort(function(a,b) {
+    var ya = yearStats[a], yb = yearStats[b];
+    var cmp;
+    if (_profileYearSort === "year") cmp = Number(b) - Number(a);
+    else if (_profileYearSort === "weeks") cmp = yb.weeks - ya.weeks;
+    else if (_profileYearSort === "wins") cmp = yb.wins - ya.wins;
+    else if (_profileYearSort === "money") cmp = yb.money - ya.money;
+    else cmp = 0;
+    return _profileYearDir === "asc" ? -cmp : cmp;
+  });
   var yearRows = years.map(function(y) {
     var ys = yearStats[y];
     return '<tr>' +
@@ -2309,6 +2383,10 @@ function renderPlayerProfile(playerName) {
       '<td style="text-align:right;color:#f59e0b;font-weight:700">'+ys.wins+'</td>' +
       '<td style="text-align:right;font-weight:700;color:'+moneyColor(ys.money)+'">'+moneyStr(ys.money)+'</td></tr>';
   }).join("");
+  function yArrow(c) {
+    if (_profileYearSort !== c) return ' <span style="color:#475569">&#8597;</span>';
+    return _profileYearDir === "desc" ? ' <span style="color:#38bdf8">&#8595;</span>' : ' <span style="color:#38bdf8">&#8593;</span>';
+  }
 
   // All teams this player has picked
   var teamList = Object.keys(teamUsage).map(function(t) {
@@ -2321,11 +2399,21 @@ function renderPlayerProfile(playerName) {
     };
   });
   var mostPickedTeams = teamList.slice().sort(function(a,b) {
-    if (b.count !== a.count) return b.count - a.count;
-    return b.money - a.money;
+    var cmp;
+    if (_profileTeamSort === "team") cmp = a.team < b.team ? -1 : a.team > b.team ? 1 : 0;
+    else if (_profileTeamSort === "count") cmp = (b.count !== a.count) ? b.count - a.count : b.money - a.money;
+    else if (_profileTeamSort === "wins") cmp = b.wins - a.wins;
+    else if (_profileTeamSort === "avg") cmp = b.avg - a.avg;
+    else if (_profileTeamSort === "money") cmp = b.money - a.money;
+    else cmp = 0;
+    return _profileTeamDir === "asc" ? -cmp : cmp;
   });
   var bestMoneyTeams = teamList.slice().sort(function(a,b) { return b.money - a.money; });
   var worstMoneyTeams = teamList.slice().sort(function(a,b) { return a.money - b.money; });
+  function tArrow(c) {
+    if (_profileTeamSort !== c) return ' <span style="color:#475569">&#8597;</span>';
+    return _profileTeamDir === "desc" ? ' <span style="color:#38bdf8">&#8595;</span>' : ' <span style="color:#38bdf8">&#8593;</span>';
+  }
 
   var teamRows = mostPickedTeams.map(function(t,i) {
     var losses = t.count - t.wins;
@@ -2395,7 +2483,12 @@ function renderPlayerProfile(playerName) {
     // Year-by-year
     '<div class="card" style="margin-bottom:14px"><h3 style="font-weight:700;margin-bottom:12px">Year-by-Year</h3>' +
     '<div class="table-wrap"><table>' +
-    '<thead><tr><th>Year</th><th style="text-align:right">Weeks</th><th style="text-align:right">Wins</th><th style="text-align:right">$</th></tr></thead>' +
+    '<thead><tr>' +
+    '<th style="cursor:pointer;user-select:none" onclick="sortProfileYear(\'year\')">Year'+yArrow("year")+'</th>' +
+    '<th style="cursor:pointer;user-select:none;text-align:right" onclick="sortProfileYear(\'weeks\')">Weeks'+yArrow("weeks")+'</th>' +
+    '<th style="cursor:pointer;user-select:none;text-align:right" onclick="sortProfileYear(\'wins\')">Wins'+yArrow("wins")+'</th>' +
+    '<th style="cursor:pointer;user-select:none;text-align:right" onclick="sortProfileYear(\'money\')">$'+yArrow("money")+'</th>' +
+    '</tr></thead>' +
     '<tbody>'+yearRows+'</tbody></table></div></div>' +
 
     // Best/Worst money teams
@@ -2414,7 +2507,13 @@ function renderPlayerProfile(playerName) {
     // All teams picked
     '<div class="card"><h3 style="font-weight:700;margin-bottom:12px">All Teams Picked</h3>' +
     '<div class="table-wrap"><table>' +
-    '<thead><tr><th>#</th><th>Team</th><th style="text-align:right">Times</th><th style="text-align:center">W-L</th><th style="text-align:right">Avg Runs</th><th style="text-align:right">Total $</th></tr></thead>' +
+    '<thead><tr><th>#</th>' +
+    '<th style="cursor:pointer;user-select:none" onclick="sortProfileTeam(\'team\')">Team'+tArrow("team")+'</th>' +
+    '<th style="cursor:pointer;user-select:none;text-align:right" onclick="sortProfileTeam(\'count\')">Times'+tArrow("count")+'</th>' +
+    '<th style="cursor:pointer;user-select:none;text-align:center" onclick="sortProfileTeam(\'wins\')">W-L'+tArrow("wins")+'</th>' +
+    '<th style="cursor:pointer;user-select:none;text-align:right" onclick="sortProfileTeam(\'avg\')">Avg Runs'+tArrow("avg")+'</th>' +
+    '<th style="cursor:pointer;user-select:none;text-align:right" onclick="sortProfileTeam(\'money\')">Total $'+tArrow("money")+'</th>' +
+    '</tr></thead>' +
     '<tbody>'+teamRows+'</tbody></table></div></div>';
 }
 
