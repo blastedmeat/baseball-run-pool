@@ -1203,39 +1203,33 @@ function renderSeasonGrid() {
   var el = document.getElementById("draft-table"); if (!el) return;
   var players = appState.data.players || [];
   var weeks = appState.data.weeks || {};
-  var dw = activeDraftWeek();
-  // header: player names
-  var head = '<tr><th style="text-align:left">Week</th>' + players.map(function(p) {
-    return '<th style="text-align:center">'+p.name+'</th>';
-  }).join("") + '</tr>';
-  // one row per week up through the active draft week
-  var body = "";
-  for (var w = 1; w <= dw; w++) {
-    var picks = (weeks[w] && weeks[w].picks) || {};
-    if (Object.keys(picks).length === 0 && w !== dw) continue; // skip empty past weeks
-    var runs = (weeks[w] && weeks[w].runs) || {};
-    // find week winner (highest saved runs)
-    var maxR = null;
-    players.forEach(function(p) {
-      var team = picks[p.name];
-      if (team && runs[team] !== undefined && (maxR === null || Number(runs[team]) > maxR)) maxR = Number(runs[team]);
-    });
-    body += '<tr><td style="font-weight:700;color:#38bdf8">W'+w+'</td>' + players.map(function(p) {
-      var team = picks[p.name];
-      if (!team) return '<td style="text-align:center;color:#475569">--</td>';
-      var r = runs[team];
-      var isWinner = r !== undefined && maxR !== null && Number(r) === maxR;
-      var runsHtml = r !== undefined ? '<div style="font-size:11px;color:'+(isWinner?"#16a34a":"#94a3b8")+'">'+r+' runs</div>' : '';
-      return '<td style="text-align:center;'+(isWinner?'background:#16a34a18;':'')+'">' +
-        '<div style="font-weight:700;font-size:13px">'+(ABBREV[team]||team)+'</div>'+runsHtml+'</td>';
-    }).join("") + '</tr>';
+  // Build player -> team -> week map
+  var pickWeek = {};
+  players.forEach(function(p) { pickWeek[p.name] = {}; });
+  for (var w in weeks) {
+    var picks = weeks[w].picks || {};
+    for (var pl in picks) {
+      if (pickWeek[pl]) pickWeek[pl][picks[pl]] = w;
+    }
   }
-  // Footer: teams used count per player
-  var foot = '<tr><td style="font-weight:700;color:#94a3b8">Used</td>' + players.map(function(p) {
-    return '<td style="text-align:center;color:#f59e0b;font-weight:700">'+usedTeams(p.name).length+'/30</td>';
-  }).join("") + '</tr>';
-  el.innerHTML = '<p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Every pick this season. Green = week winner. Each team can only be used once per player per season.</p>' +
-    '<div class="table-wrap"><table><thead>'+head+'</thead><tbody>'+body+foot+'</tbody></table></div>';
+  var head = '<tr><th style="text-align:left">Team</th>' + players.map(function(p) {
+    return '<th style="text-align:center">'+p.name+'</th>';
+  }).join("") + '<th style="text-align:right">Total</th></tr>';
+  var body = MLB_TEAMS.map(function(team) {
+    var total = 0;
+    var cells = players.map(function(p) {
+      var wk = pickWeek[p.name][team];
+      if (wk !== undefined) {
+        total++;
+        return '<td style="text-align:center;background:#ef444455;font-weight:700;font-size:12px">W'+wk+'</td>';
+      }
+      return '<td style="text-align:center"></td>';
+    }).join("");
+    return '<tr><td style="font-weight:600">'+team+'</td>'+cells+
+      '<td style="text-align:right;font-weight:700;color:'+(total>0?"#f59e0b":"#475569")+'">'+total+'</td></tr>';
+  }).join("");
+  el.innerHTML = '<p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Red = that player has already used the team this season (with the week they took it). Total = how many players have used it.</p>' +
+    '<div class="table-wrap"><table><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>';
 }
 
 async function loadDraftTable(w) {
