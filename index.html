@@ -126,6 +126,12 @@ var ABBREV = {
   "Texas Rangers":"TEX","Toronto Blue Jays":"TOR","Washington Nationals":"WSH"
 };
 var ROTATION = [0,5,4,2,7,1,3,6];
+
+// Shared formatting helpers (single source of truth)
+function moneyStr(m) { return m === null || m === undefined ? "--" : (m >= 0 ? "+$"+m.toFixed(0) : "-$"+Math.abs(m).toFixed(0)); }
+function moneyColor(m) { return m > 0 ? "#16a34a" : m < 0 ? "#ef4444" : "#475569"; }
+// Escape a string for safe use inside single-quoted JS in an HTML attribute
+function escJs(s) { return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'"); }
 var appState = { data: null, user: null, view: "home" };
 var _playerTab = "pick";
 var scheduleCache = {};
@@ -308,6 +314,13 @@ async function processAutoPicks(weekNum) {
   var picks = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].picks)
     ? JSON.parse(JSON.stringify(appState.data.weeks[weekNum].picks)) : {};
   var now = new Date();
+  // Cheap pre-checks: skip the schedule fetch and write logic entirely when
+  // (a) everyone has picked, or (b) no missed deadline exists yet.
+  var anyMissed = false;
+  for (var pre = 0; pre < ordered.length; pre++) {
+    if (!picks[ordered[pre].name] && now >= getPickDeadline(weekNum, pre)) { anyMissed = true; break; }
+  }
+  if (!anyMissed) return;
   var changed = false;
   var gameCounts = await fetchScheduleFromAPI(weekNum);
   for (var i = 0; i < ordered.length; i++) {
@@ -406,6 +419,8 @@ function calcSeasonStandings() {
 
 async function fetchRunsFromAPI(w) {
   if (!appState.data || !appState.data.seasonStart) return {};
+  // Completed weeks never change; serve from cache. Current/future weeks always fetch fresh.
+  if (w < currentWeek() && liveRunsCache[w]) return liveRunsCache[w];
   try {
     var start = getSeasonStart();
     var ws = new Date(start); ws.setDate(start.getDate() + (w-1)*7);
@@ -425,6 +440,7 @@ async function fetchRunsFromAPI(w) {
         if (hm && hm.team && hm.team.name) totals[hm.team.name] = (totals[hm.team.name]||0) + (hm.score||0);
       });
     });
+    liveRunsCache[w] = totals;
     return totals;
   } catch(e) { return {}; }
 }
@@ -1167,14 +1183,66 @@ function renderDraftShell() {
   return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">' +
     '<h2 style="font-weight:800;font-size:22px;color:#38bdf8;margin:0">Draft Board</h2>' +
     '<div style="margin-left:auto;display:flex;gap:8px;align-items:center">' +
+    '<button id="season-grid-btn" onclick="toggleSeasonGrid()" style="padding:7px 12px;background:#334155;color:#f1f5f9;font-size:13px">Season Grid</button>' +
     '<label style="color:#94a3b8;font-size:13px">Week:</label>' +
     weekDropdown("draft-week", w, "loadDraftTable(Number(this.value))") +
     '</div></div>' +
     '<div id="draft-table"><div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div></div>';
 }
 
+var _seasonGridOn = false;
+window.toggleSeasonGrid = function() {
+  _seasonGridOn = !_seasonGridOn;
+  var btn = document.getElementById("season-grid-btn");
+  if (btn) { btn.style.background = _seasonGridOn ? "#2563eb" : "#334155"; btn.textContent = _seasonGridOn ? "Week View" : "Season Grid"; }
+  if (_seasonGridOn) renderSeasonGrid();
+  else loadDraftTable(Number(document.getElementById("draft-week") ? document.getElementById("draft-week").value : activeDraftWeek()));
+};
+
+function renderSeasonGrid() {
+  var el = document.getElementById("draft-table"); if (!el) return;
+  var players = appState.data.players || [];
+  var weeks = appState.data.weeks || {};
+  var dw = activeDraftWeek();
+  // header: player names
+  var head = '<tr><th style="text-align:left">Week</th>' + players.map(function(p) {
+    return '<th style="text-align:center">'+p.name+'</th>';
+  }).join("") + '</tr>';
+  // one row per week up through the active draft week
+  var body = "";
+  for (var w = 1; w <= dw; w++) {
+    var picks = (weeks[w] && weeks[w].picks) || {};
+    if (Object.keys(picks).length === 0 && w !== dw) continue; // skip empty past weeks
+    var runs = (weeks[w] && weeks[w].runs) || {};
+    // find week winner (highest saved runs)
+    var maxR = null;
+    players.forEach(function(p) {
+      var team = picks[p.name];
+      if (team && runs[team] !== undefined && (maxR === null || Number(runs[team]) > maxR)) maxR = Number(runs[team]);
+    });
+    body += '<tr><td style="font-weight:700;color:#38bdf8">W'+w+'</td>' + players.map(function(p) {
+      var team = picks[p.name];
+      if (!team) return '<td style="text-align:center;color:#475569">--</td>';
+      var r = runs[team];
+      var isWinner = r !== undefined && maxR !== null && Number(r) === maxR;
+      var runsHtml = r !== undefined ? '<div style="font-size:11px;color:'+(isWinner?"#16a34a":"#94a3b8")+'">'+r+' runs</div>' : '';
+      return '<td style="text-align:center;'+(isWinner?'background:#16a34a18;':'')+'">' +
+        '<div style="font-weight:700;font-size:13px">'+(ABBREV[team]||team)+'</div>'+runsHtml+'</td>';
+    }).join("") + '</tr>';
+  }
+  // Footer: teams used count per player
+  var foot = '<tr><td style="font-weight:700;color:#94a3b8">Used</td>' + players.map(function(p) {
+    return '<td style="text-align:center;color:#f59e0b;font-weight:700">'+usedTeams(p.name).length+'/30</td>';
+  }).join("") + '</tr>';
+  el.innerHTML = '<p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Every pick this season. Green = week winner. Each team can only be used once per player per season.</p>' +
+    '<div class="table-wrap"><table><thead>'+head+'</thead><tbody>'+body+foot+'</tbody></table></div>';
+}
+
 async function loadDraftTable(w) {
   var el=document.getElementById("draft-table"); if (!el) return;
+  _seasonGridOn = false;
+  var sgBtn = document.getElementById("season-grid-btn");
+  if (sgBtn) { sgBtn.style.background = "#334155"; sgBtn.textContent = "Season Grid"; }
   el.innerHTML='<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div>';
   var ordered=orderedPlayers(w);
   var picks=(appState.data.weeks&&appState.data.weeks[w]&&appState.data.weeks[w].picks)||{};
@@ -1376,18 +1444,6 @@ async function loadResearchTable(w, sortBy, sortDir) {
       });
     }
 
-    var PARK_FACTORS = {
-      "Colorado Rockies":1.3,"Boston Red Sox":1.1,"Cincinnati Reds":1.1,
-      "Philadelphia Phillies":1.08,"Texas Rangers":1.07,"Arizona Diamondbacks":1.06,
-      "Chicago Cubs":1.05,"Toronto Blue Jays":1.04,"Atlanta Braves":1.03,
-      "Milwaukee Brewers":1.03,"Los Angeles Angels":1.02,"Minnesota Twins":1.02,
-      "Baltimore Orioles":1.01,"New York Yankees":1.01,"Kansas City Royals":1.0,
-      "St. Louis Cardinals":1.0,"Washington Nationals":1.0,"Detroit Tigers":0.99,
-      "Chicago White Sox":0.98,"Houston Astros":0.98,"San Francisco Giants":0.98,
-      "Cleveland Guardians":0.97,"Pittsburgh Pirates":0.97,"San Diego Padres":0.97,
-      "Los Angeles Dodgers":0.96,"New York Mets":0.96,"Seattle Mariners":0.96,
-      "Tampa Bay Rays":0.95,"Miami Marlins":0.94,"Athletics":0.96
-    };
 
     var teamSchedule = {};
     MLB_TEAMS.forEach(function(t) { teamSchedule[t]={0:[],1:[],2:[],3:[],4:[],5:[],6:[]}; });
@@ -1558,7 +1614,7 @@ window.refreshResearch = function() {
   loadResearchTable(w);
 };
 
-var BACKTEST_PARK_FACTORS = {
+var PARK_FACTORS = {
   "Colorado Rockies":1.3,"Boston Red Sox":1.1,"Cincinnati Reds":1.1,
   "Philadelphia Phillies":1.08,"Texas Rangers":1.07,"Arizona Diamondbacks":1.06,
   "Chicago Cubs":1.05,"Toronto Blue Jays":1.04,"Atlanta Braves":1.03,
@@ -1649,7 +1705,7 @@ async function backtestWeek(weekNum) {
     var avgPF = 0, pfC = 0;
     td.opps.forEach(function(o) {
       var park = o.isHome ? team : o.opp;
-      avgPF += BACKTEST_PARK_FACTORS[park] || 1.0; pfC++;
+      avgPF += PARK_FACTORS[park] || 1.0; pfC++;
     });
     avgPF = pfC > 0 ? avgPF / pfC : 1.0;
     var parkScore = (avgPF - 0.9) * 100;
@@ -1868,13 +1924,13 @@ function renderPlayersView() {
   names.sort(function(a,b) { return stats.careerStats[b].money - stats.careerStats[a].money; });
   var cards = names.map(function(name) {
     var s = stats.careerStats[name];
-    var moneyColor = s.money > 0 ? "#16a34a" : s.money < 0 ? "#ef4444" : "#475569";
-    var moneyStr = s.money >= 0 ? "+$"+s.money.toFixed(0) : "-$"+Math.abs(s.money).toFixed(0);
-    return '<div class="card" onclick="openProfile(\''+name+'\')" style="cursor:pointer;transition:transform .1s" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'">' +
+    var mc = moneyColor(s.money);
+    var ms = moneyStr(s.money);
+    return '<div class="card" onclick="openProfile(\''+escJs(name)+'\')" style="cursor:pointer;transition:transform .1s" onmouseover="this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.transform=\'none\'">' +
       '<div style="font-weight:800;font-size:18px;color:#38bdf8;margin-bottom:6px">'+name+'</div>' +
       '<div style="display:flex;justify-content:space-between;font-size:13px">' +
       '<span style="color:#94a3b8">'+s.years+' seasons</span>' +
-      '<span style="font-weight:700;color:'+moneyColor+'">'+moneyStr+'</span></div>' +
+      '<span style="font-weight:700;color:'+mc+'">'+ms+'</span></div>' +
       '<div style="display:flex;justify-content:space-between;font-size:12px;margin-top:4px">' +
       '<span style="color:#94a3b8">'+s.wins+' wins</span>' +
       '<span style="color:#38bdf8">View profile →</span></div></div>';
@@ -1904,8 +1960,6 @@ function renderTeamsView() {
     else cmp = 0;
     return dir === "asc" ? -cmp : cmp;
   });
-  function moneyStr(m) { return m >= 0 ? "+$"+m.toFixed(0) : "-$"+Math.abs(m).toFixed(0); }
-  function moneyColor(m) { return m > 0 ? "#16a34a" : m < 0 ? "#ef4444" : "#475569"; }
   function arrow(c) {
     if (_teamSort !== c) return ' <span style="color:#475569">&#8597;</span>';
     return _teamSortDir === "desc" ? ' <span style="color:#38bdf8">&#8595;</span>' : ' <span style="color:#38bdf8">&#8593;</span>';
@@ -1913,7 +1967,7 @@ function renderTeamsView() {
   var rows = teamStats.map(function(t,i) {
     var winsDisplay = (t.wins % 1 === 0) ? t.wins : t.wins.toFixed(1);
     var lossesDisplay = (t.losses % 1 === 0) ? t.losses : t.losses.toFixed(1);
-    return '<tr onclick="openTeamModal(\''+t.team.replace(/'/g,"\\'")+'\')" style="cursor:pointer">' +
+    return '<tr onclick="openTeamModal(\''+escJs(t.team)+'\')" style="cursor:pointer">' +
       '<td style="color:#94a3b8;font-weight:800">'+(i+1)+'</td>' +
       '<td style="font-weight:600"><span style="color:#38bdf8;text-decoration:underline">'+t.team+'</span></td>' +
       '<td style="text-align:right;font-weight:700;color:#f59e0b">'+t.count+'</td>' +
@@ -1985,8 +2039,6 @@ window.openTeamModal = function(team) {
       });
     });
   });
-  function moneyStr(m) { return m === null || m === undefined ? "--" : (m >= 0 ? "+$"+m.toFixed(0) : "-$"+Math.abs(m).toFixed(0)); }
-  function moneyColor(m) { return m > 0 ? "#16a34a" : m < 0 ? "#ef4444" : "#475569"; }
   var years = Object.keys(byYear).sort(function(a,b) { return Number(b)-Number(a); });
   var content = "";
   if (years.length === 0) {
@@ -2029,13 +2081,11 @@ function renderHistorySeasonContent(year) {
   players.sort(function(a,b) { return (totals[b].money||0) - (totals[a].money||0); });
   var totalRows = players.map(function(p,i) {
     var t = totals[p];
-    var moneyColor = t.money > 0 ? "#16a34a" : t.money < 0 ? "#ef4444" : "#475569";
-    var moneyStr = t.money >= 0 ? "+$"+t.money.toFixed(0) : "-$"+Math.abs(t.money).toFixed(0);
     var rowStyle = i===0 ? 'background:#16a34a18' : '';
     return '<tr style="'+rowStyle+'">' +
       '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i===0?"#1":i+1)+'</td>' +
       '<td style="font-weight:600">'+p+'</td>' +
-      '<td style="text-align:right;font-weight:700;color:'+moneyColor+'">'+moneyStr+'</td>' +
+      '<td style="text-align:right;font-weight:700;color:'+moneyColor(t.money)+'">'+moneyStr(t.money)+'</td>' +
       '<td style="text-align:right;color:#f59e0b;font-weight:700">'+(t.wins||0)+'</td></tr>';
   }).join("");
   
@@ -2046,14 +2096,12 @@ function renderHistorySeasonContent(year) {
     // Sort by score desc to show ranking
     var sorted = picks.slice().sort(function(a,b) { return (b.score||0) - (a.score||0); });
     var rows = sorted.map(function(p,i) {
-      var moneyColor = p.money > 0 ? "#16a34a" : p.money < 0 ? "#ef4444" : "#475569";
-      var moneyStr = p.money === null ? "--" : (p.money >= 0 ? "+$"+p.money.toFixed(0) : "-$"+Math.abs(p.money).toFixed(0));
       var rowStyle = i===0 ? 'background:#16a34a18' : '';
       return '<tr style="'+rowStyle+'">' +
         '<td style="font-weight:600">'+p.player+'</td>' +
         '<td style="color:#94a3b8">'+p.team+'</td>' +
         '<td style="text-align:right;font-weight:700;color:#38bdf8">'+(p.score===null?"--":p.score)+'</td>' +
-        '<td style="text-align:right;font-weight:700;color:'+moneyColor+'">'+moneyStr+'</td></tr>';
+        '<td style="text-align:right;font-weight:700;color:'+moneyColor(p.money)+'">'+moneyStr(p.money)+'</td></tr>';
     }).join("");
     return '<div class="card" style="margin-bottom:14px">' +
       '<div style="font-weight:700;color:#38bdf8;margin-bottom:10px">Week '+wk+'</div>' +
@@ -2071,7 +2119,10 @@ function renderHistorySeasonContent(year) {
     weeklyHtml;
 }
 
+var _mergedSeasonCache = null;   // invalidated whenever Firestore data changes
+
 function getMergedSeasonData() {
+  if (_mergedSeasonCache) return _mergedSeasonCache;
   var allData = JSON.parse(JSON.stringify(HISTORICAL_SEASONS));
   var liveWeeks = (appState.data && appState.data.weeks) || {};
   var players2026 = (appState.data && appState.data.players) || [];
@@ -2104,6 +2155,7 @@ function getMergedSeasonData() {
     });
     if (Object.keys(year2026.weeks).length > 0) allData[2026] = year2026;
   }
+  _mergedSeasonCache = allData;
   return allData;
 }
 
@@ -2173,19 +2225,14 @@ function renderHallOfFame() {
   var moneyLeaders = moneyPlayers.slice().sort(function(a,b) { return b.money - a.money; });
   var winsLeaders = moneyPlayers.slice().sort(function(a,b) { return b.wins - a.wins; });
 
-  function moneyStr(m) {
-    return m >= 0 ? "+$"+m.toFixed(0) : "-$"+Math.abs(m).toFixed(0);
-  }
-  function moneyColor(m) {
-    return m > 0 ? "#16a34a" : m < 0 ? "#ef4444" : "#475569";
-  }
+
 
   // Money Leaders Card
   var moneyRows = moneyLeaders.map(function(p,i) {
     var rs = i===0 ? 'background:#16a34a18' : '';
     return '<tr style="'+rs+'">' +
       '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i===0?"#1":i+1)+'</td>' +
-      '<td style="font-weight:600"><a onclick="openProfile(\''+p.name+'\')" style="color:#38bdf8;cursor:pointer;text-decoration:underline">'+p.name+'</a></td>' +
+      '<td style="font-weight:600"><a onclick="openProfile(\''+escJs(p.name)+'\')" style="color:#38bdf8;cursor:pointer;text-decoration:underline">'+p.name+'</a></td>' +
       '<td style="text-align:right;font-weight:700;color:'+moneyColor(p.money)+'">'+moneyStr(p.money)+'</td>' +
       '<td style="text-align:right;color:#94a3b8;font-size:12px">'+p.years+'</td></tr>';
   }).join("");
@@ -2195,7 +2242,7 @@ function renderHallOfFame() {
     var rs = i===0 ? 'background:#16a34a18' : '';
     return '<tr style="'+rs+'">' +
       '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i===0?"#1":i+1)+'</td>' +
-      '<td style="font-weight:600"><a onclick="openProfile(\''+p.name+'\')" style="color:#38bdf8;cursor:pointer;text-decoration:underline">'+p.name+'</a></td>' +
+      '<td style="font-weight:600"><a onclick="openProfile(\''+escJs(p.name)+'\')" style="color:#38bdf8;cursor:pointer;text-decoration:underline">'+p.name+'</a></td>' +
       '<td style="text-align:right;font-weight:700;color:#f59e0b">'+p.wins+'</td>' +
       '<td style="text-align:right;color:#94a3b8;font-size:12px">'+p.years+'</td></tr>';
   }).join("");
@@ -2205,7 +2252,7 @@ function renderHallOfFame() {
     var rs = i===0 ? 'background:#16a34a18' : '';
     return '<tr style="'+rs+'">' +
       '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i+1)+'</td>' +
-      '<td style="font-weight:600"><a onclick="openProfile(\''+w.player+'\')" style="color:#38bdf8;cursor:pointer;text-decoration:underline">'+w.player+'</a></td>' +
+      '<td style="font-weight:600"><a onclick="openProfile(\''+escJs(w.player)+'\')" style="color:#38bdf8;cursor:pointer;text-decoration:underline">'+w.player+'</a></td>' +
       '<td style="color:#94a3b8">'+w.team+'</td>' +
       '<td style="text-align:right;font-weight:800;color:#38bdf8">'+w.score+'</td>' +
       '<td style="text-align:right;color:'+moneyColor(w.money||0)+';font-weight:700">'+moneyStr(w.money||0)+'</td>' +
@@ -2217,7 +2264,7 @@ function renderHallOfFame() {
     var rs = i===0 ? 'background:#16a34a18' : '';
     return '<tr style="'+rs+'">' +
       '<td style="color:'+(i===0?"#fbbf24":"#94a3b8")+';font-weight:800">'+(i+1)+'</td>' +
-      '<td style="font-weight:600"><a onclick="openProfile(\''+w.player+'\')" style="color:#38bdf8;cursor:pointer;text-decoration:underline">'+w.player+'</a></td>' +
+      '<td style="font-weight:600"><a onclick="openProfile(\''+escJs(w.player)+'\')" style="color:#38bdf8;cursor:pointer;text-decoration:underline">'+w.player+'</a></td>' +
       '<td style="color:#94a3b8">'+w.team+'</td>' +
       '<td style="text-align:right;font-weight:800;color:#38bdf8">'+w.score+'</td>' +
       '<td style="text-align:right;color:#16a34a;font-weight:700">+$'+w.money.toFixed(0)+'</td>' +
@@ -2357,8 +2404,7 @@ function renderPlayerProfile(playerName) {
       '<div class="card"><p style="color:#94a3b8">No data found for '+playerName+'.</p></div>';
   }
 
-  function moneyStr(m) { return m >= 0 ? "+$"+m.toFixed(0) : "-$"+Math.abs(m).toFixed(0); }
-  function moneyColor(m) { return m > 0 ? "#16a34a" : m < 0 ? "#ef4444" : "#475569"; }
+
 
   var winRate = (careerWins / careerWeeks * 100).toFixed(1);
   var yearsPlayed = Object.keys(yearStats).length;
@@ -2519,6 +2565,7 @@ function renderPlayerProfile(playerName) {
 
 onSnapshot(POOL_DOC, function(snap) {
   appState.data = snap.exists() ? snap.data() : defaultData();
+  _mergedSeasonCache = null; // pool data changed; rebuild merged history on next use
   render();
 });
 </script>
