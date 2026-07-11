@@ -178,12 +178,33 @@ function weekDropdown(id, selected, onchange) {
   return '<select id="' + id + '" style="width:70px;font-size:14px;padding:6px 8px" onchange="' + onchange + '">' + opts + '</select>';
 }
 
+// ─── All-Star break ───
+// The calendar week starting on each listed Monday is skipped entirely: no pool week,
+// no draft, no standings. Pool week numbering continues with NO gap, so every pool
+// week on/after a skipped Monday maps to calendar week + 1.
+var SKIPPED_WEEK_MONDAYS = ["2026-07-13"];
+function skippedMondays() {
+  return SKIPPED_WEEK_MONDAYS.map(function(s) {
+    var p = s.split("-"); return new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+  });
+}
+// The Monday a given pool week starts on, accounting for skipped weeks.
+function weekMondayDate(weekNum) {
+  var start = getSeasonStart(); if (!start) return null;
+  var d = new Date(start); d.setDate(start.getDate() + (weekNum-1)*7);
+  skippedMondays().forEach(function(br) { if (d >= br) d.setDate(d.getDate() + 7); });
+  return d;
+}
+
 function currentWeek() {
   if (!appState.data || !appState.data.seasonStart) return 1;
   var start = getSeasonStart();
   var now = new Date();
   var diff = Math.floor((now - start) / (7*24*3600*1000));
-  return Math.max(1, Math.min(diff+1, weekCount()));
+  var week = diff + 1;
+  // During and after a skipped calendar week, the pool week is one behind the calendar
+  skippedMondays().forEach(function(br) { if (now >= br) week = week - 1; });
+  return Math.max(1, Math.min(week, weekCount()));
 }
 
 function getDraftPosition(playerIndex, weekNum) {
@@ -240,9 +261,7 @@ function playerHasPassword(player) {
 
 function getWeekWindow(weekNum) {
   if (!appState.data || !appState.data.seasonStart) return null;
-  var start = getSeasonStart();
-  var weekMonday = new Date(start);
-  weekMonday.setDate(start.getDate() + (weekNum - 1) * 7);
+  var weekMonday = weekMondayDate(weekNum);
   var friday = new Date(weekMonday); friday.setDate(weekMonday.getDate() - 3);
   var sunday = new Date(weekMonday); sunday.setDate(weekMonday.getDate() - 1);
   var testDate = new Date(friday.toISOString().split("T")[0] + "T12:00:00Z");
@@ -422,8 +441,7 @@ async function fetchRunsFromAPI(w) {
   // Completed weeks never change; serve from cache. Current/future weeks always fetch fresh.
   if (w < currentWeek() && liveRunsCache[w]) return liveRunsCache[w];
   try {
-    var start = getSeasonStart();
-    var ws = new Date(start); ws.setDate(start.getDate() + (w-1)*7);
+    var ws = weekMondayDate(w);
     var we = new Date(ws); we.setDate(ws.getDate() + 6);
     function fmt(d) { return d.toISOString().split("T")[0]; }
     var url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=" + fmt(ws) + "&endDate=" + fmt(we) + "&gameType=R&fields=dates,games,teams,away,home,team,name,score,status,abstractGameState,detailedState";
@@ -449,8 +467,7 @@ async function fetchScheduleFromAPI(w) {
   if (scheduleCache[w]) return scheduleCache[w];
   if (!appState.data || !appState.data.seasonStart) return {};
   try {
-    var start = getSeasonStart();
-    var ws = new Date(start); ws.setDate(start.getDate() + (w-1)*7);
+    var ws = weekMondayDate(w);
     var we = new Date(ws); we.setDate(ws.getDate() + 6);
     function fmt(d) { return d.toISOString().split("T")[0]; }
     var url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=" + fmt(ws) + "&endDate=" + fmt(we) + "&gameType=R&fields=dates,games,teams,away,home,team,name,status,abstractGameState,detailedState";
@@ -477,8 +494,7 @@ async function fetchScheduleFromAPI(w) {
 async function fetchCompletedGames(w) {
   if (!appState.data || !appState.data.seasonStart) return {};
   try {
-    var start = getSeasonStart();
-    var ws = new Date(start); ws.setDate(start.getDate() + (w-1)*7);
+    var ws = weekMondayDate(w);
     var we = new Date(ws); we.setDate(ws.getDate() + 6);
     function fmt(d) { return d.toISOString().split("T")[0]; }
     var url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=" + fmt(ws) + "&endDate=" + fmt(we) + "&gameType=R&fields=dates,games,teams,away,home,team,name,status,abstractGameState,detailedState";
@@ -1199,6 +1215,15 @@ window.toggleSeasonGrid = function() {
   else loadDraftTable(Number(document.getElementById("draft-week") ? document.getElementById("draft-week").value : activeDraftWeek()));
 };
 
+var _gridSort = "team";   // "team" (alpha) or "total"
+var _gridSortDir = "asc"; // team defaults asc; total defaults desc
+
+window.sortSeasonGrid = function(col) {
+  if (_gridSort === col) { _gridSortDir = _gridSortDir === "asc" ? "desc" : "asc"; }
+  else { _gridSort = col; _gridSortDir = col === "team" ? "asc" : "desc"; }
+  renderSeasonGrid();
+};
+
 function renderSeasonGrid() {
   var el = document.getElementById("draft-table"); if (!el) return;
   var players = appState.data.players || [];
@@ -1212,23 +1237,41 @@ function renderSeasonGrid() {
       if (pickWeek[pl]) pickWeek[pl][picks[pl]] = w;
     }
   }
-  var head = '<tr><th style="text-align:left">Team</th>' + players.map(function(p) {
-    return '<th style="text-align:center">'+p.name+'</th>';
-  }).join("") + '<th style="text-align:right">Total</th></tr>';
-  var body = MLB_TEAMS.map(function(team) {
+  // Precompute totals so we can sort rows
+  var rowsData = MLB_TEAMS.map(function(team) {
     var total = 0;
+    players.forEach(function(p) { if (pickWeek[p.name][team] !== undefined) total++; });
+    return { team: team, total: total };
+  });
+  rowsData.sort(function(a,b) {
+    var cmp;
+    if (_gridSort === "team") cmp = a.team < b.team ? -1 : a.team > b.team ? 1 : 0;
+    else cmp = a.total - b.total;
+    return _gridSortDir === "asc" ? cmp : -cmp;
+  });
+  function gArrow(c) {
+    if (_gridSort !== c) return ' <span style="color:#475569">&#8597;</span>';
+    return _gridSortDir === "desc" ? ' <span style="color:#38bdf8">&#8595;</span>' : ' <span style="color:#38bdf8">&#8593;</span>';
+  }
+  var head = '<tr>' +
+    '<th style="text-align:left;cursor:pointer;user-select:none" onclick="sortSeasonGrid(\'team\')">Team'+gArrow("team")+'</th>' +
+    players.map(function(p) {
+      return '<th style="text-align:center">'+p.name+'</th>';
+    }).join("") +
+    '<th style="text-align:right;cursor:pointer;user-select:none" onclick="sortSeasonGrid(\'total\')">Total'+gArrow("total")+'</th></tr>';
+  var body = rowsData.map(function(rd) {
+    var team = rd.team;
     var cells = players.map(function(p) {
       var wk = pickWeek[p.name][team];
       if (wk !== undefined) {
-        total++;
         return '<td style="text-align:center;background:#ef444455;font-weight:700;font-size:12px">W'+wk+'</td>';
       }
       return '<td style="text-align:center"></td>';
     }).join("");
     return '<tr><td style="font-weight:600">'+team+'</td>'+cells+
-      '<td style="text-align:right;font-weight:700;color:'+(total>0?"#f59e0b":"#475569")+'">'+total+'</td></tr>';
+      '<td style="text-align:right;font-weight:700;color:'+(rd.total>0?"#f59e0b":"#475569")+'">'+rd.total+'</td></tr>';
   }).join("");
-  el.innerHTML = '<p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Red = that player has already used the team this season (with the week they took it). Total = how many players have used it.</p>' +
+  el.innerHTML = '<p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Red = that player has already used the team this season (with the week they took it). Total = how many players have used it. Click Team or Total to sort.</p>' +
     '<div class="table-wrap"><table><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>';
 }
 
@@ -1386,8 +1429,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
   el.innerHTML = '<div style="color:#94a3b8;padding:16px"><span class="spinner"></span> Loading schedule...</div>';
   if (!appState.data.seasonStart) { el.innerHTML = '<p style="color:#f59e0b;padding:16px">Set a season start date in Admin first.</p>'; return; }
   try {
-    var start = getSeasonStart();
-    var weekMonday = new Date(start); weekMonday.setDate(start.getDate() + (w-1)*7);
+    var weekMonday = weekMondayDate(w);
     var days = [];
     for (var d = 0; d < 7; d++) { var day = new Date(weekMonday); day.setDate(weekMonday.getDate()+d); days.push(day); }
     var dayLabels = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
@@ -1623,7 +1665,7 @@ var PARK_FACTORS = {
 
 async function backtestWeek(weekNum) {
   var start = getSeasonStart();
-  var ws = new Date(start); ws.setDate(start.getDate() + (weekNum-1)*7);
+  var ws = weekMondayDate(weekNum);
   var we = new Date(ws); we.setDate(ws.getDate() + 6);
   function fmt(d) { return d.toISOString().split("T")[0]; }
   var season = start.getFullYear();
