@@ -248,6 +248,30 @@ function usedTeams(playerName) {
   return used;
 }
 
+// ─── Team reuse grants (offline side-pool prize) ───
+// Admin can grant a player the right to use a specific team a SECOND time
+// this season. Stored on the player object as reuseTeams: ["New York Yankees"].
+function timesUsed(playerName, team) {
+  var n = 0;
+  var weeks = (appState.data && appState.data.weeks) || {};
+  for (var w in weeks) {
+    if (weeks[w].picks && weeks[w].picks[playerName] === team) n++;
+  }
+  return n;
+}
+function allowedUses(playerName, team) {
+  var p = ((appState.data && appState.data.players) || []).find(function(x){ return x.name === playerName; });
+  var reuse = (p && p.reuseTeams) || [];
+  return reuse.indexOf(team) >= 0 ? 2 : 1;
+}
+function isTeamExhausted(playerName, team) {
+  return timesUsed(playerName, team) >= allowedUses(playerName, team);
+}
+// True when the player has used the team once but holds a grant for a second use
+function hasSecondUseAvailable(playerName, team) {
+  return timesUsed(playerName, team) === 1 && allowedUses(playerName, team) === 2;
+}
+
 function takenTeamsThisWeek(weekNum) {
   var taken = [];
   var picks = (appState.data && appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].picks) || {};
@@ -352,14 +376,14 @@ async function processAutoPicks(weekNum) {
     var defaultTeam = null;
     for (var t = 0; t < MLB_TEAMS.length; t++) {
       var team = MLB_TEAMS[t];
-      if (taken.indexOf(team) >= 0 || used.indexOf(team) >= 0) continue;
+      if (taken.indexOf(team) >= 0 || isTeamExhausted(p.name, team)) continue;
       var games = gameCounts[team] !== undefined ? parseFloat(gameCounts[team]) : 0;
       if (games >= 6) { defaultTeam = team; break; }
     }
     if (!defaultTeam) {
       for (var t2 = 0; t2 < MLB_TEAMS.length; t2++) {
         var team2 = MLB_TEAMS[t2];
-        if (taken.indexOf(team2) >= 0 || used.indexOf(team2) >= 0) continue;
+        if (taken.indexOf(team2) >= 0 || isTeamExhausted(p.name, team2)) continue;
         defaultTeam = team2; break;
       }
     }
@@ -671,8 +695,8 @@ window.loginAdmin = function() {
 };
 
 function renderAdmin() {
-  var tabLabels = {setup:"Season Setup",players:"Players & Draft Order",runs:"Enter Runs",manage:"Week Management",picks:"Enter Pick",alerts:"Text Alerts",reset:"Reset Pool"};
-  var tabKeys = ["setup","players","runs","manage","picks","alerts","reset"];
+  var tabLabels = {setup:"Season Setup",players:"Players & Draft Order",runs:"Enter Runs",manage:"Week Management",picks:"Enter Pick",reuse:"Team Reuse",alerts:"Text Alerts",reset:"Reset Pool"};
+  var tabKeys = ["setup","players","runs","manage","picks","reuse","alerts","reset"];
   var btns = tabKeys.map(function(t,i) {
     return '<button class="tab-btn' + (i===0?' active':'') + '" id="atab-' + t + '" onclick="adminTab(\'' + t + '\')">' + tabLabels[t] + '</button>';
   }).join("");
@@ -682,7 +706,7 @@ function renderAdmin() {
 }
 
 window.adminTab = function(t) {
-  ["setup","players","runs","manage","picks","alerts","reset"].forEach(function(x) {
+  ["setup","players","runs","manage","picks","reuse","alerts","reset"].forEach(function(x) {
     var el = document.getElementById("atab-"+x); if (el) el.classList.toggle("active",x===t);
   });
   var panel = document.getElementById("admin-panel");
@@ -691,6 +715,7 @@ window.adminTab = function(t) {
   if (t==="runs")    panel.innerHTML = renderAdminRuns(currentWeek());
   if (t==="manage")  panel.innerHTML = renderAdminManage(currentWeek());
   if (t==="picks")   panel.innerHTML = renderAdminPicks(activeDraftWeek());
+  if (t==="reuse")   panel.innerHTML = renderAdminReuse();
   if (t==="alerts")  panel.innerHTML = renderAdminAlerts();
   if (t==="reset")   panel.innerHTML = renderAdminReset();
 };
@@ -923,7 +948,7 @@ function renderAdminPicks(w) {
     var used = usedTeams(pl.name);
     var opts = '<option value="">No pick</option>' + MLB_TEAMS.map(function(t) {
       var isTaken = takenList.indexOf(t)>=0 && t!==current;
-      var isUsed = used.indexOf(t)>=0 && t!==current;
+      var isUsed = isTeamExhausted(pl.name, t) && t!==current;
       return '<option value="'+t+'"'+(current===t?" selected":"")+(isTaken||isUsed?" disabled":"")+'>'+t+(isTaken?" (taken)":isUsed?" (used)":"")+'</option>';
     }).join("");
     return '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;background:#0f172a;border-radius:8px;padding:10px 14px;flex-wrap:wrap">' +
@@ -963,6 +988,72 @@ window.clearAdminPick = async function(w) {
   var d=JSON.parse(JSON.stringify(appState.data)); d.weeks=d.weeks||{}; d.weeks[w]=d.weeks[w]||{}; d.weeks[w].picks={};
   await saveData(d); flash("All picks cleared for Week "+w+".");
   document.getElementById("admin-panel").innerHTML = renderAdminPicks(w);
+};
+
+function renderAdminReuse() {
+  var players = appState.data.players || [];
+  var playerOpts = players.map(function(p) { return '<option value="'+escJs(p.name)+'">'+p.name+'</option>'; }).join("");
+  var teamOpts = MLB_TEAMS.map(function(t) { return '<option value="'+escJs(t)+'">'+t+'</option>'; }).join("");
+
+  var grantRows = "";
+  players.forEach(function(p) {
+    (p.reuseTeams || []).forEach(function(team) {
+      var used = timesUsed(p.name, team);
+      var status = used >= 2
+        ? '<span style="color:#9333ea;font-weight:600">2nd use taken</span>'
+        : used === 1
+          ? '<span style="color:#f59e0b;font-weight:600">1 use left</span>'
+          : '<span style="color:#16a34a;font-weight:600">unused</span>';
+      grantRows += '<tr>' +
+        '<td style="font-weight:600">'+p.name+'</td>' +
+        '<td>'+team+'</td>' +
+        '<td style="text-align:center">'+status+'</td>' +
+        '<td style="text-align:right"><button onclick="revokeReuse(\''+escJs(p.name)+'\',\''+escJs(team)+'\')" style="padding:5px 10px;background:#7f1d1d;color:#fca5a5;font-size:12px">Remove</button></td></tr>';
+    });
+  });
+  if (!grantRows) grantRows = '<tr><td colspan="4" style="color:#94a3b8;text-align:center;padding:14px">No reuse grants yet.</td></tr>';
+
+  return '<div class="card" style="max-width:620px;margin-bottom:14px">' +
+    '<h3 style="font-weight:700;margin-bottom:4px">Team Reuse Grants</h3>' +
+    '<p style="color:#94a3b8;font-size:13px;margin-bottom:16px">Grant a player the right to use a specific team a second time this season (offline pool prize). The team becomes pickable again for that player until both uses are spent.</p>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:18px">' +
+    '<select id="reuse-player" style="flex:1;min-width:140px">'+playerOpts+'</select>' +
+    '<select id="reuse-team" style="flex:1.4;min-width:180px">'+teamOpts+'</select>' +
+    '<button onclick="grantReuse()" style="padding:9px 16px;background:#2563eb;color:#fff;font-size:14px;white-space:nowrap">Grant 2nd Use</button>' +
+    '</div>' +
+    '<div class="table-wrap"><table>' +
+    '<thead><tr><th>Player</th><th>Team</th><th style="text-align:center">Status</th><th></th></tr></thead>' +
+    '<tbody>'+grantRows+'</tbody></table></div></div>';
+}
+
+window.grantReuse = async function() {
+  var playerEl = document.getElementById("reuse-player");
+  var teamEl = document.getElementById("reuse-team");
+  if (!playerEl || !teamEl) return;
+  var name = playerEl.value, team = teamEl.value;
+  var d = JSON.parse(JSON.stringify(appState.data));
+  var idx = d.players.findIndex(function(p){ return p.name === name; });
+  if (idx < 0) return;
+  d.players[idx].reuseTeams = d.players[idx].reuseTeams || [];
+  if (d.players[idx].reuseTeams.indexOf(team) >= 0) { flash(name + " already has a grant for the " + team + ".", "#dc2626"); return; }
+  d.players[idx].reuseTeams.push(team);
+  await saveData(d);
+  flash("Granted: " + name + " may use the " + team + " twice.");
+  var panel = document.getElementById("admin-panel");
+  if (panel) panel.innerHTML = renderAdminReuse();
+};
+
+window.revokeReuse = async function(name, team) {
+  var used = timesUsed(name, team);
+  if (used >= 2 && !confirm(name + " has already used the " + team + " twice. Removing the grant won't undo picks. Remove anyway?")) return;
+  var d = JSON.parse(JSON.stringify(appState.data));
+  var idx = d.players.findIndex(function(p){ return p.name === name; });
+  if (idx < 0) return;
+  d.players[idx].reuseTeams = (d.players[idx].reuseTeams || []).filter(function(t){ return t !== team; });
+  await saveData(d);
+  flash("Removed " + name + "'s reuse grant for the " + team + ".");
+  var panel = document.getElementById("admin-panel");
+  if (panel) panel.innerHTML = renderAdminReuse();
 };
 
 function renderAdminAlerts() {
@@ -1054,9 +1145,10 @@ function renderPlayer() {
   var teamGrid = "";
   if (!myPick&&pickCheck.can) {
     var btns = MLB_TEAMS.map(function(team) {
-      var isTaken=taken.indexOf(team)>=0, isUsed=used.indexOf(team)>=0, dis=isTaken||isUsed;
+      var isTaken=taken.indexOf(team)>=0, isUsed=isTeamExhausted(name,team), dis=isTaken||isUsed;
+      var secondUse=!isTaken&&!isUsed&&hasSecondUseAvailable(name,team);
       return '<button class="team-btn'+(isTaken?' taken':isUsed?' used':'')+'" '+(dis?'disabled':'')+' onclick="makePick(\''+team.replace(/'/g,"\\'")+'\','+w+')">'+
-        team+(isTaken?' <span style="font-size:11px;color:#ef4444">taken</span>':isUsed?' <span style="font-size:11px;color:#9333ea">used</span>':'')+'</button>';
+        team+(isTaken?' <span style="font-size:11px;color:#ef4444">taken</span>':isUsed?' <span style="font-size:11px;color:#9333ea">used</span>':secondUse?' <span style="font-size:11px;color:#f59e0b">2nd use OK</span>':'')+'</button>';
     }).join("");
     teamGrid = '<div class="card" style="margin-top:16px"><h3 style="font-weight:700;margin-bottom:14px">Select Your Team - Week '+w+'</h3><div class="team-grid">'+btns+'</div></div>';
   }
@@ -1169,7 +1261,7 @@ window.makePick = function(team, w) {
   var pickCheck = canPlayerPick(w, name);
   if (!pickCheck.can) { flash(pickCheck.reason, "#dc2626"); return; }
   if (takenTeamsThisWeek(w).indexOf(team) >= 0) { flash("That team is already taken!", "#dc2626"); return; }
-  if (usedTeams(name).indexOf(team) >= 0) { flash("You already used that team this season!", "#dc2626"); return; }
+  if (isTeamExhausted(name, team)) { flash("You already used that team this season!", "#dc2626"); return; }
   _pendingPick = { team: team, weekNum: w };
   document.getElementById("modal-team").textContent = team;
   document.getElementById("modal-week").textContent = "Week " + w;
@@ -1228,19 +1320,22 @@ function renderSeasonGrid() {
   var el = document.getElementById("draft-table"); if (!el) return;
   var players = appState.data.players || [];
   var weeks = appState.data.weeks || {};
-  // Build player -> team -> week map
+  // Build player -> team -> [weeks] map (a team can appear twice via a reuse grant)
   var pickWeek = {};
   players.forEach(function(p) { pickWeek[p.name] = {}; });
   for (var w in weeks) {
     var picks = weeks[w].picks || {};
     for (var pl in picks) {
-      if (pickWeek[pl]) pickWeek[pl][picks[pl]] = w;
+      if (pickWeek[pl]) {
+        if (!pickWeek[pl][picks[pl]]) pickWeek[pl][picks[pl]] = [];
+        pickWeek[pl][picks[pl]].push(w);
+      }
     }
   }
   // Precompute totals so we can sort rows
   var rowsData = MLB_TEAMS.map(function(team) {
     var total = 0;
-    players.forEach(function(p) { if (pickWeek[p.name][team] !== undefined) total++; });
+    players.forEach(function(p) { var wks = pickWeek[p.name][team]; if (wks) total += wks.length; });
     return { team: team, total: total };
   });
   rowsData.sort(function(a,b) {
@@ -1262,9 +1357,9 @@ function renderSeasonGrid() {
   var body = rowsData.map(function(rd) {
     var team = rd.team;
     var cells = players.map(function(p) {
-      var wk = pickWeek[p.name][team];
-      if (wk !== undefined) {
-        return '<td style="text-align:center;background:#ef444455;font-weight:700;font-size:12px">W'+wk+'</td>';
+      var wks = pickWeek[p.name][team];
+      if (wks && wks.length) {
+        return '<td style="text-align:center;background:#ef444455;font-weight:700;font-size:12px">'+wks.map(function(x){return 'W'+x;}).join(", ")+'</td>';
       }
       return '<td style="text-align:center"></td>';
     }).join("");
@@ -1606,9 +1701,10 @@ async function loadResearchTable(w, sortBy, sortDir) {
     teamList.forEach(function(item) {
       var isThisWeek=item.name===myThisWeekPick;
       var isDrafted=!isThisWeek&&draftedByOthers[item.name];
-      var alreadyUsed=!isThisWeek&&!isDrafted&&myPickedTeams.indexOf(item.name)>=0;
+      var alreadyUsed=!isThisWeek&&!isDrafted&&myPickedTeams.indexOf(item.name)>=0&&(!pname||isTeamExhausted(pname,item.name));
+      var secondUseOk=!isThisWeek&&!isDrafted&&!alreadyUsed&&pname&&hasSecondUseAvailable(pname,item.name);
       var rowStyle=isThisWeek?'background:#16a34a33;outline:2px solid #16a34a;outline-offset:-2px;':isDrafted?'background:#7c3aed22;':alreadyUsed?'background:#47556944;':'';
-      var badge=isThisWeek?' <span style="font-size:10px;background:#16a34a;padding:1px 5px;border-radius:4px;color:#fff">my pick</span>':isDrafted?' <span style="font-size:10px;background:#7c3aed;padding:1px 5px;border-radius:4px;color:#fff">drafted</span>':alreadyUsed?' <span style="font-size:10px;background:#475569;padding:1px 5px;border-radius:4px;color:#cbd5e1">used</span>':'';
+      var badge=isThisWeek?' <span style="font-size:10px;background:#16a34a;padding:1px 5px;border-radius:4px;color:#fff">my pick</span>':isDrafted?' <span style="font-size:10px;background:#7c3aed;padding:1px 5px;border-radius:4px;color:#fff">drafted</span>':alreadyUsed?' <span style="font-size:10px;background:#475569;padding:1px 5px;border-radius:4px;color:#cbd5e1">used</span>':secondUseOk?' <span style="font-size:10px;background:#f59e0b;padding:1px 5px;border-radius:4px;color:#0f172a">2nd use OK</span>':'';
       var tc=item.total>=7?"#16a34a":item.total>=5?"#fbbf24":"#ef4444";
       var scoreCell = '';
       if (isTim && item.score !== null) {
