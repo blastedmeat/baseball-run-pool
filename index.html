@@ -1531,7 +1531,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
     function fmt(dt) { return dt.toISOString().split("T")[0]; }
     var season = getSeasonStart().getFullYear();
 
-    var schedUrl = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(days[0])+"&endDate="+fmt(days[6])+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,status,abstractGameState,detailedState";
+    var schedUrl = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(days[0])+"&endDate="+fmt(days[6])+"&gameType=R&hydrate=probablePitcher&fields=dates,date,games,teams,away,home,team,name,status,abstractGameState,detailedState,probablePitcher,id,fullName";
     var rsUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=hitting";
     var raUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=pitching";
 
@@ -1540,19 +1540,36 @@ async function loadResearchTable(w, sortBy, sortDir) {
     // For Tim: also fetch recent hitting stats (last 14 days) and relief pitching stats
     var recentUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=byDateRange&group=hitting&startDate="+fmt(new Date(days[0].getTime()-14*86400000))+"&endDate="+fmt(days[0]);
     var bullpenUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=pitching&gameType=R";
-    if (isTim) { fetchList.push(fetch(recentUrl)); fetchList.push(fetch(bullpenUrl)); }
+    // v2 model: true starter/reliever ERA splits per team
+    var spRpUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=statSplits&group=pitching&sitCodes=sp,rp";
+    if (isTim) { fetchList.push(fetch(recentUrl)); fetchList.push(fetch(bullpenUrl)); fetchList.push(fetch(spRpUrl)); }
     var results = await Promise.all(fetchList);
     var schedJson = await results[0].json();
     var rsJson    = await results[1].json();
     var raJson    = await results[2].json();
     var recentJson = isTim ? await results[3].json() : null;
     var bullpenJson = isTim ? await results[4].json() : null;
+    var spRpJson = isTim ? await results[5].json() : null;
 
     var rsMap = {}, raMap = {};
+    var seasonRgMap = {}, oppRagMap = {};
     var rsSplits = (rsJson.stats && rsJson.stats[0] && rsJson.stats[0].splits) || [];
     var raSplits = (raJson.stats && raJson.stats[0] && raJson.stats[0].splits) || [];
-    rsSplits.forEach(function(s) { if (s.team&&s.team.name) rsMap[s.team.name] = s.stat&&s.stat.runs!==undefined ? s.stat.runs : "--"; });
-    raSplits.forEach(function(s) { if (s.team&&s.team.name) raMap[s.team.name] = s.stat&&s.stat.runs!==undefined ? s.stat.runs : "--"; });
+    rsSplits.forEach(function(s) {
+      if (s.team&&s.team.name) {
+        rsMap[s.team.name] = s.stat&&s.stat.runs!==undefined ? s.stat.runs : "--";
+        if (s.stat && s.stat.runs !== undefined && s.stat.gamesPlayed) seasonRgMap[s.team.name] = s.stat.runs / s.stat.gamesPlayed;
+      }
+    });
+    raSplits.forEach(function(s) {
+      if (s.team&&s.team.name) {
+        raMap[s.team.name] = s.stat&&s.stat.runs!==undefined ? s.stat.runs : "--";
+        if (s.stat && s.stat.runs !== undefined && s.stat.gamesPlayed) oppRagMap[s.team.name] = s.stat.runs / s.stat.gamesPlayed;
+      }
+    });
+    var leagueRpg = 0, lrCount = 0;
+    for (var lrT in seasonRgMap) { leagueRpg += seasonRgMap[lrT]; lrCount++; }
+    leagueRpg = lrCount > 0 ? leagueRpg / lrCount : 4.5;
 
     // Tim-only data: recent R/G and opponent bullpen ERA
     var recentRgMap = {}, bullpenEraMap = {};
@@ -1575,8 +1592,35 @@ async function loadResearchTable(w, sortBy, sortDir) {
       });
     }
 
+    // ─── v2: starter (sp) and reliever (rp) ERA splits per team ───
+    var spEraMap = {}, rpEraMap = {};
+    if (isTim && spRpJson && spRpJson.stats) {
+      spRpJson.stats.forEach(function(statBlock) {
+        (statBlock.splits || []).forEach(function(s) {
+          var code = (s.split && (s.split.code || s.split.description)) || (statBlock.splitCode) || "";
+          code = String(code).toLowerCase();
+          if (!s.team || !s.team.name || !s.stat || s.stat.era === undefined) return;
+          if (code.indexOf("sp") >= 0 || code.indexOf("start") >= 0) spEraMap[s.team.name] = parseFloat(s.stat.era);
+          else if (code.indexOf("rp") >= 0 || code.indexOf("relie") >= 0) rpEraMap[s.team.name] = parseFloat(s.stat.era);
+        });
+      });
+    }
+    // Fallback: if the splits endpoint gave nothing, use whole-team ERA for both
+    var splitsOk = Object.keys(rpEraMap).length >= 20 && Object.keys(spEraMap).length >= 20;
+    if (isTim && !splitsOk) {
+      MLB_TEAMS.forEach(function(t) {
+        if (bullpenEraMap[t] !== undefined) { spEraMap[t] = bullpenEraMap[t]; rpEraMap[t] = bullpenEraMap[t]; }
+      });
+    }
+    var leagueSpEra = 0, leagueRpEra = 0, spN = 0, rpN = 0;
+    for (var lt in spEraMap) { leagueSpEra += spEraMap[lt]; spN++; }
+    for (var lt2 in rpEraMap) { leagueRpEra += rpEraMap[lt2]; rpN++; }
+    leagueSpEra = spN > 0 ? leagueSpEra / spN : 4.2;
+    leagueRpEra = rpN > 0 ? leagueRpEra / rpN : 4.1;
+
 
     var teamSchedule = {};
+    var probableIds = {};
     MLB_TEAMS.forEach(function(t) { teamSchedule[t]={0:[],1:[],2:[],3:[],4:[],5:[],6:[]}; });
     (schedJson.dates||[]).forEach(function(de) {
       var dayIdx=-1;
@@ -1588,10 +1632,31 @@ async function loadResearchTable(w, sortBy, sortDir) {
         if (!aw||!hm) return;
         var gDetail = (g.status && g.status.detailedState) ? g.status.detailedState.toLowerCase() : "";
         if (gDetail.indexOf("postponed") >= 0) return;
-        if (teamSchedule[aw]) teamSchedule[aw][dayIdx].push({opp:hm,isHome:false});
-        if (teamSchedule[hm]) teamSchedule[hm][dayIdx].push({opp:aw,isHome:true});
+        var awStarter = g.teams.away.probablePitcher && g.teams.away.probablePitcher.id;
+        var hmStarter = g.teams.home.probablePitcher && g.teams.home.probablePitcher.id;
+        if (awStarter) probableIds[awStarter] = true;
+        if (hmStarter) probableIds[hmStarter] = true;
+        // Each entry records the OPPOSING starter (the pitcher this team's offense faces)
+        if (teamSchedule[aw]) teamSchedule[aw][dayIdx].push({opp:hm,isHome:false,oppStarterId:hmStarter||null});
+        if (teamSchedule[hm]) teamSchedule[hm][dayIdx].push({opp:aw,isHome:true,oppStarterId:awStarter||null});
       });
     });
+
+    // Fetch season ERAs for all announced probable starters in one batched call
+    var starterEraById = {};
+    if (isTim) {
+      var idList = Object.keys(probableIds);
+      if (idList.length > 0) {
+        try {
+          var peopleUrl = "https://statsapi.mlb.com/api/v1/people?personIds="+idList.join(",")+"&hydrate=stats(group=[pitching],type=[season],season="+season+")";
+          var peopleJson = await (await fetch(peopleUrl)).json();
+          (peopleJson.people || []).forEach(function(person) {
+            var st = person.stats && person.stats[0] && person.stats[0].splits && person.stats[0].splits[0] && person.stats[0].splits[0].stat;
+            if (st && st.era !== undefined) starterEraById[person.id] = parseFloat(st.era);
+          });
+        } catch(e) { /* starters fall back to rotation ERA */ }
+      }
+    }
 
     function totalGames(s) { var t=0; for(var d2=0;d2<7;d2++) t+=s[d2].length; return t; }
     function abbrev(name) { return ABBREV[name]||name.substring(0,3).toUpperCase(); }
@@ -1629,7 +1694,8 @@ async function loadResearchTable(w, sortBy, sortDir) {
         total: total,
         rs: rsMap[team] !== undefined ? rsMap[team] : "--",
         ra: raMap[team] !== undefined ? raMap[team] : "--",
-        score: null
+        score: null,
+        score2: null
       };
       if (isTim && total > 0) {
         // Count home games and collect opponents
@@ -1664,6 +1730,35 @@ async function loadResearchTable(w, sortBy, sortDir) {
         var rawScore = recentScore + gamesScore + bpScore + parkScore;
         // Fixed scale: raw 40 = 20 runs, raw 80 = 45 runs (0.625 runs per point)
         item.score = Math.round((20 + (rawScore - 40) * 0.625) * 10) / 10;
+
+        // ─── v2: multiplicative expected-runs model ───
+        // teamRPG = 0.7×season R/G + 0.3×recent-14 R/G, then per game:
+        // teamRPG × (opp RA/G ÷ league R/G) × park factor × boom
+        // Boom fires only when the opponent bullpen is weak AND that game's
+        // starter (announced, else rotation ERA) is below league average.
+        var sRg = seasonRgMap[team] !== undefined ? seasonRgMap[team] : leagueRpg;
+        var rRg = recentRgMap[team] !== undefined ? parseFloat(recentRgMap[team]) : sRg;
+        var teamRPG = 0.7 * sRg + 0.3 * rRg;
+        var v2 = 0;
+        for (var vd = 0; vd < 7; vd++) {
+          sched[vd].forEach(function(g) {
+            var oppRag = oppRagMap[g.opp] !== undefined ? oppRagMap[g.opp] : leagueRpg;
+            var park = g.isHome ? team : g.opp;
+            var pf = PARK_FACTORS[park] || 1.0;
+            var game = teamRPG * (oppRag / leagueRpg) * pf;
+            // Conditional boom
+            var oppRp = rpEraMap[g.opp];
+            var starterEra = (g.oppStarterId && starterEraById[g.oppStarterId] !== undefined)
+              ? starterEraById[g.oppStarterId]
+              : (spEraMap[g.opp] !== undefined ? spEraMap[g.opp] : leagueSpEra);
+            if (oppRp !== undefined && oppRp > leagueRpEra && starterEra > leagueSpEra) {
+              var boom = 1 + 0.03 * (oppRp - leagueRpEra);
+              game *= Math.min(boom, 1.10);
+            }
+            v2 += game;
+          });
+        }
+        item.score2 = Math.round(v2 * 10) / 10;
       }
       return item;
     });
@@ -1675,12 +1770,16 @@ async function loadResearchTable(w, sortBy, sortDir) {
     if (isTim && isDraftOpen(w)) {
       var existingSnap = appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].projections;
       if (!existingSnap) {
-        var snapMap = {};
-        teamList.forEach(function(it) { if (it.score !== null && it.score !== undefined) snapMap[it.name] = it.score; });
+        var snapMap = {}, snapMap2 = {};
+        teamList.forEach(function(it) {
+          if (it.score !== null && it.score !== undefined) snapMap[it.name] = it.score;
+          if (it.score2 !== null && it.score2 !== undefined) snapMap2[it.name] = it.score2;
+        });
         if (Object.keys(snapMap).length > 0) {
           var dSnap = JSON.parse(JSON.stringify(appState.data));
           dSnap.weeks = dSnap.weeks || {}; dSnap.weeks[w] = dSnap.weeks[w] || {};
           dSnap.weeks[w].projections = snapMap;
+          if (Object.keys(snapMap2).length > 0) dSnap.weeks[w].projectionsV2 = snapMap2;
           dSnap.weeks[w].projectionsSavedAt = new Date().toISOString();
           saveData(dSnap);
         }
@@ -1690,6 +1789,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
     teamList.sort(function(a,b) {
       var cmp = 0;
       if (sortBy === "score") cmp = (b.score||0) - (a.score||0);
+      else if (sortBy === "score2") cmp = (b.score2||0) - (a.score2||0);
       else if (sortBy === "games") cmp = b.total - a.total;
       else if (sortBy === "rs") cmp = (a.rs==="--"?-1:a.rs) > (b.rs==="--"?-1:b.rs) ? -1 : 1;
       else if (sortBy === "ra") cmp = (a.ra==="--"?9999:a.ra) > (b.ra==="--"?9999:b.ra) ? -1 : 1;
@@ -1713,6 +1813,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
       '<th '+ths+' '+thClick("ra")+' style="text-align:center;cursor:pointer;user-select:none">RA'+sortArrow("ra")+'</th>' +
       '<th '+ths+' '+thClick("games")+' style="text-align:center;cursor:pointer;user-select:none">Total'+sortArrow("games")+'</th>';
     if (isTim) hdr+='<th '+ths+' '+thClick("score")+' style="text-align:center;cursor:pointer;user-select:none">Proj R'+sortArrow("score")+'</th>';
+    if (isTim) hdr+='<th '+ths+' '+thClick("score2")+' style="text-align:center;cursor:pointer;user-select:none">Proj v2'+sortArrow("score2")+'</th>';
     for (var dh=0;dh<7;dh++) hdr+='<th style="text-align:center">'+dayLabels[dh]+'<br><span style="font-weight:400;color:#64748b">'+(days[dh].getMonth()+1)+'/'+days[dh].getDate()+'</span></th>';
     hdr+='</tr>';
 
@@ -1732,6 +1833,13 @@ async function loadResearchTable(w, sortBy, sortDir) {
         scoreCell = '<td style="text-align:center;font-weight:800;color:'+sColor+'">'+sc+'</td>';
       } else if (isTim) {
         scoreCell = '<td style="text-align:center;color:#475569">--</td>';
+      }
+      if (isTim && item.score2 !== null) {
+        var sc2 = item.score2;
+        var s2Color = sc2 >= 38 ? '#16a34a' : sc2 >= 30 ? '#fbbf24' : '#ef4444';
+        scoreCell += '<td style="text-align:center;font-weight:800;color:'+s2Color+'">'+sc2+'</td>';
+      } else if (isTim) {
+        scoreCell += '<td style="text-align:center;color:#475569">--</td>';
       }
       teamRows+='<tr style="'+rowStyle+'">' +
         '<td style="font-weight:600;white-space:nowrap"><span class="hide-mobile">'+item.name+'</span><span class="show-mobile">'+abbrev(item.name)+'</span>'+badge+'</td>' +
@@ -1789,6 +1897,7 @@ async function backtestWeek(weekNum) {
   // If a frozen snapshot exists for this week, we only need the schedule (for
   // actual runs) — projections come from what the model actually said at draft time.
   var snapshot = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].projections) || null;
+  var snapshot2 = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].projectionsV2) || null;
 
   var schedUrl = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(ws)+"&endDate="+fmt(we)+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,score,status,abstractGameState,detailedState";
   var recentUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=byDateRange&group=hitting&startDate="+fmt(recentStart)+"&endDate="+fmt(ws);
@@ -1856,7 +1965,7 @@ async function backtestWeek(weekNum) {
       var td = teamData[team];
       if (td.games === 0) continue;
       if (snapshot[team] === undefined) continue; // team not in snapshot (shouldn't happen)
-      teams.push({ name:team, games:td.games, projected:snapshot[team], actual:td.actual });
+      teams.push({ name:team, games:td.games, projected:snapshot[team], projected2:(snapshot2&&snapshot2[team]!==undefined)?snapshot2[team]:null, actual:td.actual });
     }
   } else {
     for (var team in teamData) {
@@ -1927,6 +2036,25 @@ window.runBacktest = async function() {
       var corr = (n*sumXY-sumX*sumY) / Math.sqrt((n*sumX2-sumX*sumX)*(n*sumY2-sumY*sumY));
       if (isNaN(corr)) corr = 0;
       var mae = totalErr / n;
+
+      // v2 metrics when the snapshot recorded both models
+      var v2teams = teams.filter(function(t){ return t.projected2 !== null && t.projected2 !== undefined; });
+      var corr2 = null, mae2 = null, edge2 = null;
+      if (v2teams.length >= 5) {
+        var n2 = v2teams.length, sXY=0,sX=0,sY=0,sX2=0,sY2=0,tErr=0;
+        v2teams.forEach(function(t) {
+          sX+=t.projected2; sY+=t.actual; sXY+=t.projected2*t.actual;
+          sX2+=t.projected2*t.projected2; sY2+=t.actual*t.actual;
+          tErr+=Math.abs(t.projected2-t.actual);
+        });
+        corr2 = (n2*sXY-sX*sY) / Math.sqrt((n2*sX2-sX*sX)*(n2*sY2-sY*sY));
+        if (isNaN(corr2)) corr2 = 0;
+        mae2 = tErr / n2;
+        var byV2 = v2teams.slice().sort(function(a,b){return b.projected2-a.projected2;});
+        var t5a = 0; byV2.slice(0,5).forEach(function(t){ t5a += t.actual; });
+        var avgAll2 = sY / n2;
+        edge2 = t5a/Math.min(5,byV2.length) - avgAll2;
+      }
       var avgActual = sumY / n;
       var top5 = teams.slice(0, 5);
       var top5avg = top5.reduce(function(s,t){return s+t.actual;},0) / 5;
@@ -1948,7 +2076,15 @@ window.runBacktest = async function() {
         '<span style="color:#94a3b8">Corr: <strong style="color:'+(corr>=0.3?'#16a34a':corr>=0.1?'#fbbf24':'#ef4444')+'">'+corr.toFixed(3)+'</strong></span>' +
         '<span style="color:#94a3b8">MAE: <strong style="color:#f59e0b">'+mae.toFixed(1)+'</strong></span>' +
         '<span style="color:#94a3b8">Top 5 edge: <strong style="color:'+(edge>0?'#16a34a':'#ef4444')+'">'+(edge>=0?'+':'')+edge.toFixed(1)+' runs</strong></span>' +
-        '</div></div>';
+        '</div></div>' +
+        (corr2 !== null
+          ? '<div style="display:flex;gap:16px;font-size:12px;margin:-6px 0 12px 0;justify-content:flex-end;flex-wrap:wrap">' +
+            '<span style="color:#f59e0b;font-weight:700">v2:</span>' +
+            '<span style="color:#94a3b8">Corr: <strong style="color:'+(corr2>=0.3?'#16a34a':corr2>=0.1?'#fbbf24':'#ef4444')+'">'+corr2.toFixed(3)+'</strong></span>' +
+            '<span style="color:#94a3b8">MAE: <strong style="color:#f59e0b">'+mae2.toFixed(1)+'</strong></span>' +
+            '<span style="color:#94a3b8">Top 5 edge: <strong style="color:'+(edge2>0?'#16a34a':'#ef4444')+'">'+(edge2>=0?'+':'')+edge2.toFixed(1)+' runs</strong></span>' +
+            '</div>'
+          : '');
 
       // Top 5 projected table
       html += '<div style="font-size:12px;color:#94a3b8;margin-bottom:6px;font-weight:600">Top 5 Projected</div>' +
