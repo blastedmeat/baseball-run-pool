@@ -1668,6 +1668,25 @@ async function loadResearchTable(w, sortBy, sortDir) {
       return item;
     });
 
+    // ─── Projection snapshot ───
+    // The first time projections are computed while a week's draft is open,
+    // freeze them to Firestore. The backtest grades these exact numbers against
+    // actual runs later — no after-the-fact stat reconstruction.
+    if (isTim && isDraftOpen(w)) {
+      var existingSnap = appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].projections;
+      if (!existingSnap) {
+        var snapMap = {};
+        teamList.forEach(function(it) { if (it.score !== null && it.score !== undefined) snapMap[it.name] = it.score; });
+        if (Object.keys(snapMap).length > 0) {
+          var dSnap = JSON.parse(JSON.stringify(appState.data));
+          dSnap.weeks = dSnap.weeks || {}; dSnap.weeks[w] = dSnap.weeks[w] || {};
+          dSnap.weeks[w].projections = snapMap;
+          dSnap.weeks[w].projectionsSavedAt = new Date().toISOString();
+          saveData(dSnap);
+        }
+      }
+    }
+
     teamList.sort(function(a,b) {
       var cmp = 0;
       if (sortBy === "score") cmp = (b.score||0) - (a.score||0);
@@ -1767,33 +1786,43 @@ async function backtestWeek(weekNum) {
   var season = start.getFullYear();
   var recentStart = new Date(ws.getTime() - 14*86400000);
 
+  // If a frozen snapshot exists for this week, we only need the schedule (for
+  // actual runs) — projections come from what the model actually said at draft time.
+  var snapshot = (appState.data.weeks && appState.data.weeks[weekNum] && appState.data.weeks[weekNum].projections) || null;
+
   var schedUrl = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(ws)+"&endDate="+fmt(we)+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,score,status,abstractGameState,detailedState";
   var recentUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=byDateRange&group=hitting&startDate="+fmt(recentStart)+"&endDate="+fmt(ws);
   var bpUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=pitching&gameType=R";
 
-  var results = await Promise.all([fetch(schedUrl), fetch(recentUrl), fetch(bpUrl)]);
+  var fetches = [fetch(schedUrl)];
+  if (!snapshot) { fetches.push(fetch(recentUrl)); fetches.push(fetch(bpUrl)); }
+  var results = await Promise.all(fetches);
   var schedJson = await results[0].json();
-  var recentJson = await results[1].json();
-  var bpJson = await results[2].json();
+  var recentJson = snapshot ? null : await results[1].json();
+  var bpJson = snapshot ? null : await results[2].json();
 
   // Recent R/G
   var recentRgMap = {};
-  var rsSplits = (recentJson.stats && recentJson.stats[0] && recentJson.stats[0].splits) || [];
-  rsSplits.forEach(function(s) {
-    if (s.team && s.team.name && s.stat) {
-      var gp = s.stat.gamesPlayed || 1;
-      recentRgMap[s.team.name] = (s.stat.runs || 0) / gp;
-    }
-  });
+  if (recentJson) {
+    var rsSplits = (recentJson.stats && recentJson.stats[0] && recentJson.stats[0].splits) || [];
+    rsSplits.forEach(function(s) {
+      if (s.team && s.team.name && s.stat) {
+        var gp = s.stat.gamesPlayed || 1;
+        recentRgMap[s.team.name] = (s.stat.runs || 0) / gp;
+      }
+    });
+  }
 
   // Bullpen ERA
   var bullpenEraMap = {};
-  var bpSplits = (bpJson.stats && bpJson.stats[0] && bpJson.stats[0].splits) || [];
-  bpSplits.forEach(function(s) {
-    if (s.team && s.team.name && s.stat && s.stat.era !== undefined) {
-      bullpenEraMap[s.team.name] = parseFloat(s.stat.era);
-    }
-  });
+  if (bpJson) {
+    var bpSplits = (bpJson.stats && bpJson.stats[0] && bpJson.stats[0].splits) || [];
+    bpSplits.forEach(function(s) {
+      if (s.team && s.team.name && s.stat && s.stat.era !== undefined) {
+        bullpenEraMap[s.team.name] = parseFloat(s.stat.era);
+      }
+    });
+  }
 
   // Build schedule and actual runs
   var teamData = {};
@@ -1820,38 +1849,46 @@ async function backtestWeek(weekNum) {
     });
   });
 
-  // Compute raw composite scores
+  // Compute projections: frozen snapshot when we have one, otherwise reconstruct
   var teams = [];
-  for (var team in teamData) {
-    var td = teamData[team];
-    if (td.games === 0) continue;
-    var recentRg = recentRgMap[team] || 4.0;
-    var recentScore = Math.min(recentRg / 7.0, 1.0) * 30;
-    var gamesScore = Math.min(td.games / 7.0, 1.0) * 30;
-    var avgOppBpEra = 0, oppCount = 0;
-    td.opps.forEach(function(o) {
-      if (bullpenEraMap[o.opp] !== undefined) { avgOppBpEra += bullpenEraMap[o.opp]; oppCount++; }
+  if (snapshot) {
+    for (var team in teamData) {
+      var td = teamData[team];
+      if (td.games === 0) continue;
+      if (snapshot[team] === undefined) continue; // team not in snapshot (shouldn't happen)
+      teams.push({ name:team, games:td.games, projected:snapshot[team], actual:td.actual });
+    }
+  } else {
+    for (var team in teamData) {
+      var td = teamData[team];
+      if (td.games === 0) continue;
+      var recentRg = recentRgMap[team] || 4.0;
+      var recentScore = Math.min(recentRg / 7.0, 1.0) * 30;
+      var gamesScore = Math.min(td.games / 7.0, 1.0) * 30;
+      var avgOppBpEra = 0, oppCount = 0;
+      td.opps.forEach(function(o) {
+        if (bullpenEraMap[o.opp] !== undefined) { avgOppBpEra += bullpenEraMap[o.opp]; oppCount++; }
+      });
+      avgOppBpEra = oppCount > 0 ? avgOppBpEra / oppCount : 4.0;
+      var bpScore = Math.min(avgOppBpEra / 6.0, 1.0) * 20;
+      var avgPF = 0, pfC = 0;
+      td.opps.forEach(function(o) {
+        var park = o.isHome ? team : o.opp;
+        avgPF += PARK_FACTORS[park] || 1.0; pfC++;
+      });
+      avgPF = pfC > 0 ? avgPF / pfC : 1.0;
+      var parkScore = (avgPF - 0.9) * 100;
+      parkScore = Math.max(0, Math.min(parkScore, 20));
+      var rawScore = recentScore + gamesScore + bpScore + parkScore;
+      teams.push({ name:team, games:td.games, rawScore:rawScore, actual:td.actual });
+    }
+    // Convert to projected runs using fixed scale: raw 40 = 20 runs, raw 80 = 45 runs
+    teams.forEach(function(t) {
+      t.projected = Math.round((20 + (t.rawScore - 40) * 0.625) * 10) / 10;
     });
-    avgOppBpEra = oppCount > 0 ? avgOppBpEra / oppCount : 4.0;
-    var bpScore = Math.min(avgOppBpEra / 6.0, 1.0) * 20;
-    var avgPF = 0, pfC = 0;
-    td.opps.forEach(function(o) {
-      var park = o.isHome ? team : o.opp;
-      avgPF += PARK_FACTORS[park] || 1.0; pfC++;
-    });
-    avgPF = pfC > 0 ? avgPF / pfC : 1.0;
-    var parkScore = (avgPF - 0.9) * 100;
-    parkScore = Math.max(0, Math.min(parkScore, 20));
-    var rawScore = recentScore + gamesScore + bpScore + parkScore;
-    teams.push({ name:team, games:td.games, rawScore:rawScore, actual:td.actual });
   }
-
-  // Convert to projected runs using fixed scale: raw 40 = 20 runs, raw 80 = 45 runs
-  teams.forEach(function(t) {
-    t.projected = Math.round((20 + (t.rawScore - 40) * 0.625) * 10) / 10;
-  });
   teams.sort(function(a,b) { return b.projected - a.projected; });
-  return { weekNum:weekNum, start:fmt(ws), end:fmt(we), teams:teams };
+  return { weekNum:weekNum, start:fmt(ws), end:fmt(we), teams:teams, fromSnapshot: !!snapshot };
 }
 
 window.runBacktest = async function() {
@@ -1903,7 +1940,10 @@ window.runBacktest = async function() {
 
       html += '<div class="card" style="margin-bottom:16px">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">' +
-        '<div style="font-weight:800;color:#38bdf8;font-size:15px">Week '+wk.weekNum+': '+wk.start+' to '+wk.end+'</div>' +
+        '<div style="font-weight:800;color:#38bdf8;font-size:15px">Week '+wk.weekNum+': '+wk.start+' to '+wk.end+
+        (wk.fromSnapshot
+          ? ' <span style="font-size:10px;background:#16a34a;padding:2px 6px;border-radius:4px;color:#fff;vertical-align:middle">frozen at draft</span>'
+          : ' <span style="font-size:10px;background:#475569;padding:2px 6px;border-radius:4px;color:#cbd5e1;vertical-align:middle">reconstructed</span>')+'</div>' +
         '<div style="display:flex;gap:16px;font-size:12px">' +
         '<span style="color:#94a3b8">Corr: <strong style="color:'+(corr>=0.3?'#16a34a':corr>=0.1?'#fbbf24':'#ef4444')+'">'+corr.toFixed(3)+'</strong></span>' +
         '<span style="color:#94a3b8">MAE: <strong style="color:#f59e0b">'+mae.toFixed(1)+'</strong></span>' +
