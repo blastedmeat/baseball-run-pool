@@ -1732,27 +1732,31 @@ async function loadResearchTable(w, sortBy, sortDir) {
         item.score = Math.round((20 + (rawScore - 40) * 0.625) * 10) / 10;
 
         // ─── v2: multiplicative expected-runs model ───
-        // teamRPG = 0.7×season R/G + 0.3×recent-14 R/G, then per game:
-        // teamRPG × (opp RA/G ÷ league R/G) × park factor × boom
-        // Boom fires only when the opponent bullpen is weak AND that game's
-        // starter (announced, else rotation ERA) is below league average.
+        // Offense: teamRPG = 0.7×season R/G + 0.3×recent-14, park-neutralized by the
+        // team's average park exposure (half home, half ~neutral road).
+        // Opponent per game: 60% that game's starter + 40% relief corps (innings share),
+        // ERA→RA/G via ×1.08, neutralized by the opponent's own park exposure.
+        // Venue park factor then applies exactly once per game.
+        // Boom fires only when opp bullpen is weak AND that game's starter is below avg.
+        function parkExposure(t) { return ((PARK_FACTORS[t] || 1.0) + 1) / 2; }
         var sRg = seasonRgMap[team] !== undefined ? seasonRgMap[team] : leagueRpg;
         var rRg = recentRgMap[team] !== undefined ? parseFloat(recentRgMap[team]) : sRg;
-        var teamRPG = 0.7 * sRg + 0.3 * rRg;
+        var teamRPG = (0.7 * sRg + 0.3 * rRg) / parkExposure(team);
         var v2 = 0;
         for (var vd = 0; vd < 7; vd++) {
           sched[vd].forEach(function(g) {
-            var oppRag = oppRagMap[g.opp] !== undefined ? oppRagMap[g.opp] : leagueRpg;
+            var teamSp = spEraMap[g.opp] !== undefined ? spEraMap[g.opp] : leagueSpEra;
+            var starterEra = (g.oppStarterId && starterEraById[g.oppStarterId] !== undefined)
+              ? 0.7 * starterEraById[g.oppStarterId] + 0.3 * teamSp   // regress small samples
+              : teamSp;
+            var oppRp = rpEraMap[g.opp] !== undefined ? rpEraMap[g.opp] : leagueRpEra;
+            var oppRA9 = ((0.6 * starterEra + 0.4 * oppRp) * 1.08) / parkExposure(g.opp);
             var park = g.isHome ? team : g.opp;
             var pf = PARK_FACTORS[park] || 1.0;
-            var game = teamRPG * (oppRag / leagueRpg) * pf;
+            var game = teamRPG * (oppRA9 / leagueRpg) * pf;
             // Conditional boom
-            var oppRp = rpEraMap[g.opp];
-            var starterEra = (g.oppStarterId && starterEraById[g.oppStarterId] !== undefined)
-              ? starterEraById[g.oppStarterId]
-              : (spEraMap[g.opp] !== undefined ? spEraMap[g.opp] : leagueSpEra);
-            if (oppRp !== undefined && oppRp > leagueRpEra && starterEra > leagueSpEra) {
-              var boom = 1 + 0.03 * (oppRp - leagueRpEra);
+            if (rpEraMap[g.opp] !== undefined && rpEraMap[g.opp] > leagueRpEra && starterEra > leagueSpEra) {
+              var boom = 1 + 0.03 * (rpEraMap[g.opp] - leagueRpEra);
               game *= Math.min(boom, 1.10);
             }
             v2 += game;
