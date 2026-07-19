@@ -1542,7 +1542,13 @@ async function loadResearchTable(w, sortBy, sortDir) {
     var bullpenUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=season&group=pitching&gameType=R";
     // v2 model: true starter/reliever ERA splits per team
     var spRpUrl = "https://statsapi.mlb.com/api/v1/teams/stats?season="+season+"&sportId=1&stats=statSplits&group=pitching&sitCodes=sp,rp";
-    if (isTim) { fetchList.push(fetch(recentUrl)); fetchList.push(fetch(bullpenUrl)); fetchList.push(fetch(spRpUrl)); }
+    // Remaining-season schedule: counts each team's future 7+ game weeks
+    var lastW = weekCount();
+    var futStart = w < lastW ? weekMondayDate(w+1) : null;
+    var futEnd = null;
+    if (futStart) { futEnd = new Date(weekMondayDate(lastW)); futEnd.setDate(futEnd.getDate()+6); }
+    var futureUrl = futStart ? "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate="+fmt(futStart)+"&endDate="+fmt(futEnd)+"&gameType=R&fields=dates,date,games,teams,away,home,team,name,status,detailedState" : null;
+    if (isTim) { fetchList.push(fetch(recentUrl)); fetchList.push(fetch(bullpenUrl)); fetchList.push(fetch(spRpUrl)); if (futureUrl) fetchList.push(fetch(futureUrl)); }
     var results = await Promise.all(fetchList);
     var schedJson = await results[0].json();
     var rsJson    = await results[1].json();
@@ -1550,6 +1556,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
     var recentJson = isTim ? await results[3].json() : null;
     var bullpenJson = isTim ? await results[4].json() : null;
     var spRpJson = isTim ? await results[5].json() : null;
+    var futureJson = (isTim && futureUrl) ? await results[6].json() : null;
 
     var rsMap = {}, raMap = {};
     var seasonRgMap = {}, oppRagMap = {};
@@ -1617,6 +1624,40 @@ async function loadResearchTable(w, sortBy, sortDir) {
     for (var lt2 in rpEraMap) { leagueRpEra += rpEraMap[lt2]; rpN++; }
     leagueSpEra = spN > 0 ? leagueSpEra / spN : 4.2;
     leagueRpEra = rpN > 0 ? leagueRpEra / rpN : 4.1;
+
+    // ─── Remaining 7+ game weeks per team (pool weeks after the viewed week) ───
+    var sevenLeftMap = {};
+    if (isTim && futureJson) {
+      // Map each calendar date string to its pool week number
+      var dateToWeek = {};
+      for (var rw = w+1; rw <= lastW; rw++) {
+        var rm = weekMondayDate(rw);
+        for (var rd = 0; rd < 7; rd++) {
+          var dd = new Date(rm); dd.setDate(rm.getDate()+rd);
+          dateToWeek[fmt(dd)] = rw;
+        }
+      }
+      var weekGameCounts = {}; // team -> { week: count }
+      MLB_TEAMS.forEach(function(t) { weekGameCounts[t] = {}; });
+      (futureJson.dates||[]).forEach(function(de) {
+        var pw = dateToWeek[de.date];
+        if (pw === undefined) return; // date falls in a skipped (All-Star) week
+        (de.games||[]).forEach(function(g) {
+          var aw=g.teams&&g.teams.away&&g.teams.away.team&&g.teams.away.team.name;
+          var hm=g.teams&&g.teams.home&&g.teams.home.team&&g.teams.home.team.name;
+          if (!aw||!hm) return;
+          var gd = (g.status && g.status.detailedState) ? g.status.detailedState.toLowerCase() : "";
+          if (gd.indexOf("postponed") >= 0) return;
+          if (weekGameCounts[aw]) weekGameCounts[aw][pw] = (weekGameCounts[aw][pw]||0)+1;
+          if (weekGameCounts[hm]) weekGameCounts[hm][pw] = (weekGameCounts[hm][pw]||0)+1;
+        });
+      });
+      MLB_TEAMS.forEach(function(t) {
+        var cnt = 0;
+        for (var pw2 in weekGameCounts[t]) { if (weekGameCounts[t][pw2] >= 7) cnt++; }
+        sevenLeftMap[t] = cnt;
+      });
+    }
 
 
     var teamSchedule = {};
@@ -1695,7 +1736,8 @@ async function loadResearchTable(w, sortBy, sortDir) {
         rs: rsMap[team] !== undefined ? rsMap[team] : "--",
         ra: raMap[team] !== undefined ? raMap[team] : "--",
         score: null,
-        score2: null
+        score2: null,
+        sevenLeft: (isTim && sevenLeftMap[team] !== undefined) ? sevenLeftMap[team] : null
       };
       if (isTim && total > 0) {
         // Count home games and collect opponents
@@ -1794,6 +1836,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
       var cmp = 0;
       if (sortBy === "score") cmp = (b.score||0) - (a.score||0);
       else if (sortBy === "score2") cmp = (b.score2||0) - (a.score2||0);
+      else if (sortBy === "sevenLeft") cmp = (b.sevenLeft||0) - (a.sevenLeft||0);
       else if (sortBy === "games") cmp = b.total - a.total;
       else if (sortBy === "rs") cmp = (a.rs==="--"?-1:a.rs) > (b.rs==="--"?-1:b.rs) ? -1 : 1;
       else if (sortBy === "ra") cmp = (a.ra==="--"?9999:a.ra) > (b.ra==="--"?9999:b.ra) ? -1 : 1;
@@ -1818,6 +1861,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
       '<th '+ths+' '+thClick("games")+' style="text-align:center;cursor:pointer;user-select:none">Total'+sortArrow("games")+'</th>';
     if (isTim) hdr+='<th '+ths+' '+thClick("score")+' style="text-align:center;cursor:pointer;user-select:none">Proj R'+sortArrow("score")+'</th>';
     if (isTim) hdr+='<th '+ths+' '+thClick("score2")+' style="text-align:center;cursor:pointer;user-select:none">Proj v2'+sortArrow("score2")+'</th>';
+    if (isTim) hdr+='<th '+ths+' '+thClick("sevenLeft")+' style="text-align:center;cursor:pointer;user-select:none">7g Wks Left'+sortArrow("sevenLeft")+'</th>';
     for (var dh=0;dh<7;dh++) hdr+='<th style="text-align:center">'+dayLabels[dh]+'<br><span style="font-weight:400;color:#64748b">'+(days[dh].getMonth()+1)+'/'+days[dh].getDate()+'</span></th>';
     hdr+='</tr>';
 
@@ -1842,6 +1886,12 @@ async function loadResearchTable(w, sortBy, sortDir) {
         var sc2 = item.score2;
         var s2Color = sc2 >= 38 ? '#16a34a' : sc2 >= 30 ? '#fbbf24' : '#ef4444';
         scoreCell += '<td style="text-align:center;font-weight:800;color:'+s2Color+'">'+sc2+'</td>';
+      } else if (isTim) {
+        scoreCell += '<td style="text-align:center;color:#475569">--</td>';
+      }
+      if (isTim && item.sevenLeft !== null) {
+        var svColor = item.sevenLeft === 0 ? '#ef4444' : item.sevenLeft === 1 ? '#fbbf24' : '#16a34a';
+        scoreCell += '<td style="text-align:center;font-weight:700;color:'+svColor+'">'+item.sevenLeft+'</td>';
       } else if (isTim) {
         scoreCell += '<td style="text-align:center;color:#475569">--</td>';
       }
