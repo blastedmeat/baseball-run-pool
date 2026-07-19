@@ -1627,6 +1627,9 @@ async function loadResearchTable(w, sortBy, sortDir) {
 
     // ─── Remaining 7+ game weeks per team (pool weeks after the viewed week) ───
     var sevenLeftMap = {};
+    var recWeekMap = {};
+    var weekGameCounts = {}; // team -> { week: games }
+    var weekOpps = {};       // team -> { week: [{opp,isHome}] }
     if (isTim && futureJson) {
       // Map each calendar date string to its pool week number
       var dateToWeek = {};
@@ -1637,8 +1640,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
           dateToWeek[fmt(dd)] = rw;
         }
       }
-      var weekGameCounts = {}; // team -> { week: count }
-      MLB_TEAMS.forEach(function(t) { weekGameCounts[t] = {}; });
+      MLB_TEAMS.forEach(function(t) { weekGameCounts[t] = {}; weekOpps[t] = {}; });
       (futureJson.dates||[]).forEach(function(de) {
         var pw = dateToWeek[de.date];
         if (pw === undefined) return; // date falls in a skipped (All-Star) week
@@ -1648,8 +1650,16 @@ async function loadResearchTable(w, sortBy, sortDir) {
           if (!aw||!hm) return;
           var gd = (g.status && g.status.detailedState) ? g.status.detailedState.toLowerCase() : "";
           if (gd.indexOf("postponed") >= 0) return;
-          if (weekGameCounts[aw]) weekGameCounts[aw][pw] = (weekGameCounts[aw][pw]||0)+1;
-          if (weekGameCounts[hm]) weekGameCounts[hm][pw] = (weekGameCounts[hm][pw]||0)+1;
+          if (weekGameCounts[aw]) {
+            weekGameCounts[aw][pw] = (weekGameCounts[aw][pw]||0)+1;
+            if (!weekOpps[aw][pw]) weekOpps[aw][pw] = [];
+            weekOpps[aw][pw].push({opp:hm,isHome:false});
+          }
+          if (weekGameCounts[hm]) {
+            weekGameCounts[hm][pw] = (weekGameCounts[hm][pw]||0)+1;
+            if (!weekOpps[hm][pw]) weekOpps[hm][pw] = [];
+            weekOpps[hm][pw].push({opp:aw,isHome:true});
+          }
         });
       });
       MLB_TEAMS.forEach(function(t) {
@@ -1699,6 +1709,60 @@ async function loadResearchTable(w, sortBy, sortDir) {
       }
     }
 
+    // ─── Recommended week to select ───
+    // For every week from now through the end of the season, score each team's
+    // week as: Σ per game (opp RA/G ÷ league R/G × park factor)  ← games + opposition
+    //          × 0.85^threats                                     ← chance the team survives to Tim's pick
+    // Threats = players picking ahead of Tim that week who could still take the team
+    // (current week excludes players who have already made their pick).
+    if (isTim) {
+      var recOrderCache = {};
+      function recThreatCount(pw, team) {
+        if (!recOrderCache[pw]) {
+          var ord = orderedPlayers(pw);
+          var ti = -1;
+          for (var oi = 0; oi < ord.length; oi++) { if (ord[oi].name === "Tim") { ti = oi; break; } }
+          recOrderCache[pw] = { order: ord, timIdx: ti };
+        }
+        var info = recOrderCache[pw];
+        if (info.timIdx < 0) return 0;
+        var wPicks = (pw === w) ? ((appState.data.weeks && appState.data.weeks[pw] && appState.data.weeks[pw].picks) || {}) : {};
+        var n = 0;
+        for (var ai = 0; ai < info.timIdx; ai++) {
+          var pnm = info.order[ai].name;
+          if (pw === w && wPicks[pnm]) continue; // already picked this week; no longer a threat
+          if (!isTeamExhausted(pnm, team)) n++;
+        }
+        return n;
+      }
+      MLB_TEAMS.forEach(function(t) {
+        if (isTeamExhausted("Tim", t)) { recWeekMap[t] = "exhausted"; return; }
+        var best = null;
+        for (var rw = w; rw <= lastW; rw++) {
+          var games;
+          if (rw === w) {
+            games = [];
+            for (var cd = 0; cd < 7; cd++) (teamSchedule[t][cd]||[]).forEach(function(g){ games.push(g); });
+          } else {
+            games = (weekOpps[t] && weekOpps[t][rw]) || [];
+          }
+          if (games.length === 0) continue;
+          // opposition + park quality, summed per game
+          var oppScore = 0;
+          games.forEach(function(g) {
+            var oppRag = oppRagMap[g.opp] !== undefined ? oppRagMap[g.opp] : leagueRpg;
+            var venue = g.isHome ? t : g.opp;
+            var pf = PARK_FACTORS[venue] || 1.0;
+            oppScore += (oppRag / leagueRpg) * pf;
+          });
+          var threats = recThreatCount(rw, t);
+          var val = oppScore * Math.pow(0.85, threats);
+          if (best === null || val > best.val) best = { week: rw, val: val, games: games.length, threats: threats };
+        }
+        recWeekMap[t] = best;
+      });
+    }
+
     function totalGames(s) { var t=0; for(var d2=0;d2<7;d2++) t+=s[d2].length; return t; }
     function abbrev(name) { return ABBREV[name]||name.substring(0,3).toUpperCase(); }
     function cellContent(gms) {
@@ -1737,7 +1801,8 @@ async function loadResearchTable(w, sortBy, sortDir) {
         ra: raMap[team] !== undefined ? raMap[team] : "--",
         score: null,
         score2: null,
-        sevenLeft: (isTim && sevenLeftMap[team] !== undefined) ? sevenLeftMap[team] : null
+        sevenLeft: (isTim && sevenLeftMap[team] !== undefined) ? sevenLeftMap[team] : null,
+        recWeek: (isTim && recWeekMap[team] !== undefined) ? recWeekMap[team] : null
       };
       if (isTim && total > 0) {
         // Count home games and collect opponents
@@ -1837,6 +1902,12 @@ async function loadResearchTable(w, sortBy, sortDir) {
       if (sortBy === "score") cmp = (b.score||0) - (a.score||0);
       else if (sortBy === "score2") cmp = (b.score2||0) - (a.score2||0);
       else if (sortBy === "sevenLeft") cmp = (b.sevenLeft||0) - (a.sevenLeft||0);
+      else if (sortBy === "recWeek") {
+        var aR = (a.recWeek && a.recWeek !== "exhausted") ? a.recWeek.week : 999;
+        var bR = (b.recWeek && b.recWeek !== "exhausted") ? b.recWeek.week : 999;
+        cmp = aR !== bR ? aR - bR
+            : ((b.recWeek && b.recWeek.val) || 0) - ((a.recWeek && a.recWeek.val) || 0);
+      }
       else if (sortBy === "games") cmp = b.total - a.total;
       else if (sortBy === "rs") cmp = (a.rs==="--"?-1:a.rs) > (b.rs==="--"?-1:b.rs) ? -1 : 1;
       else if (sortBy === "ra") cmp = (a.ra==="--"?9999:a.ra) > (b.ra==="--"?9999:b.ra) ? -1 : 1;
@@ -1862,6 +1933,7 @@ async function loadResearchTable(w, sortBy, sortDir) {
     if (isTim) hdr+='<th '+ths+' '+thClick("score")+' style="text-align:center;cursor:pointer;user-select:none">Proj R'+sortArrow("score")+'</th>';
     if (isTim) hdr+='<th '+ths+' '+thClick("score2")+' style="text-align:center;cursor:pointer;user-select:none">Proj v2'+sortArrow("score2")+'</th>';
     if (isTim) hdr+='<th '+ths+' '+thClick("sevenLeft")+' style="text-align:center;cursor:pointer;user-select:none">7g Wks Left'+sortArrow("sevenLeft")+'</th>';
+    if (isTim) hdr+='<th '+ths+' '+thClick("recWeek")+' style="text-align:center;cursor:pointer;user-select:none">Rec Week'+sortArrow("recWeek")+'</th>';
     for (var dh=0;dh<7;dh++) hdr+='<th style="text-align:center">'+dayLabels[dh]+'<br><span style="font-weight:400;color:#64748b">'+(days[dh].getMonth()+1)+'/'+days[dh].getDate()+'</span></th>';
     hdr+='</tr>';
 
@@ -1894,6 +1966,19 @@ async function loadResearchTable(w, sortBy, sortDir) {
         scoreCell += '<td style="text-align:center;font-weight:700;color:'+svColor+'">'+item.sevenLeft+'</td>';
       } else if (isTim) {
         scoreCell += '<td style="text-align:center;color:#475569">--</td>';
+      }
+      if (isTim) {
+        var rc = item.recWeek;
+        if (rc === "exhausted") {
+          scoreCell += '<td style="text-align:center;color:#475569">&mdash;</td>';
+        } else if (rc === null || rc === undefined) {
+          scoreCell += '<td style="text-align:center;color:#475569">--</td>';
+        } else {
+          var rcColor = rc.threats === 0 ? '#16a34a' : rc.threats <= 2 ? '#fbbf24' : '#ef4444';
+          var rcWeek = rc.week === w ? 'NOW' : 'W'+rc.week;
+          var rcLabel = rc.threats === 0 ? 'clear' : rc.threats + ' ahead';
+          scoreCell += '<td style="text-align:center;font-weight:700;color:'+rcColor+';font-size:12px">'+rcWeek+' &middot; '+rc.games+'g &middot; '+rcLabel+'</td>';
+        }
       }
       teamRows+='<tr style="'+rowStyle+'">' +
         '<td style="font-weight:600;white-space:nowrap"><span class="hide-mobile">'+item.name+'</span><span class="show-mobile">'+abbrev(item.name)+'</span>'+badge+'</td>' +
