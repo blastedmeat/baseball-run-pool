@@ -1710,11 +1710,11 @@ async function loadResearchTable(w, sortBy, sortDir) {
     }
 
     // ─── Recommended week to select ───
-    // For every week from now through the end of the season, score each team's
-    // week as: Σ per game (opp RA/G ÷ league R/G × park factor)  ← games + opposition
-    //          × 0.85^threats                                     ← chance the team survives to Tim's pick
-    // Threats = players picking ahead of Tim that week who could still take the team
-    // (current week excludes players who have already made their pick).
+    // Builds an actual draft PLAN: every (team, week) pair is scored as
+    //   Σ per game (opp RA/G ÷ league R/G × park factor) × 0.85^threats
+    // then pairs are greedily assigned best-first, one team per week, one week
+    // per team. A team's Rec Week is the week where it is Tim's top realistic
+    // pick given the rest of the plan — not its best week in isolation.
     if (isTim) {
       var recOrderCache = {};
       function recThreatCount(pw, team) {
@@ -1735,10 +1735,14 @@ async function loadResearchTable(w, sortBy, sortDir) {
         }
         return n;
       }
+      // Tim can't be assigned the current week if his pick is already in
+      var timPickedThisWeek = !!(appState.data.weeks && appState.data.weeks[w] && appState.data.weeks[w].picks && appState.data.weeks[w].picks["Tim"]);
+      var candidates = [];
       MLB_TEAMS.forEach(function(t) {
         if (isTeamExhausted("Tim", t)) { recWeekMap[t] = "exhausted"; return; }
-        var best = null;
+        recWeekMap[t] = null; // default: not in plan
         for (var rw = w; rw <= lastW; rw++) {
+          if (rw === w && timPickedThisWeek) continue;
           var games;
           if (rw === w) {
             games = [];
@@ -1747,7 +1751,6 @@ async function loadResearchTable(w, sortBy, sortDir) {
             games = (weekOpps[t] && weekOpps[t][rw]) || [];
           }
           if (games.length === 0) continue;
-          // opposition + park quality, summed per game
           var oppScore = 0;
           games.forEach(function(g) {
             var oppRag = oppRagMap[g.opp] !== undefined ? oppRagMap[g.opp] : leagueRpg;
@@ -1756,10 +1759,16 @@ async function loadResearchTable(w, sortBy, sortDir) {
             oppScore += (oppRag / leagueRpg) * pf;
           });
           var threats = recThreatCount(rw, t);
-          var val = oppScore * Math.pow(0.85, threats);
-          if (best === null || val > best.val) best = { week: rw, val: val, games: games.length, threats: threats };
+          candidates.push({ team: t, week: rw, val: oppScore * Math.pow(0.85, threats), games: games.length, threats: threats });
         }
-        recWeekMap[t] = best;
+      });
+      // Greedy assignment: best pair first, one team per week
+      candidates.sort(function(a,b) { return b.val - a.val; });
+      var weekTaken = {}, teamTaken = {};
+      candidates.forEach(function(c) {
+        if (weekTaken[c.week] || teamTaken[c.team]) return;
+        weekTaken[c.week] = true; teamTaken[c.team] = true;
+        recWeekMap[c.team] = { week: c.week, val: c.val, games: c.games, threats: c.threats };
       });
     }
 
